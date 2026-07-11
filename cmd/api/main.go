@@ -3,8 +3,9 @@ package main
 import (
 	"os"
 
-	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/internal/config"
 	"github.com/rs/zerolog"
+
+	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/internal/config"
 )
 
 func main() {

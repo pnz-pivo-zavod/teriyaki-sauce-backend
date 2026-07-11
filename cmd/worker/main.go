@@ -3,8 +3,9 @@ package main
 import (
 	"os"
 
-	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/internal/config"
 	"github.com/rs/zerolog"
+
+	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/internal/config"
 )
 
 func main() {
@@ -21,7 +22,7 @@ func main() {
 		logger.Error().Msg("invalid log level")
 		os.Exit(1)
 	}
-	
+
 	logger = logger.Level(level)
 	logger.Info().Msg("configuration is valid")
 }

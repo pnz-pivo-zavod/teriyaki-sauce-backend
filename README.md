@@ -6,7 +6,7 @@ Backend для персонального task tracker, работающего �
 
 ## Требования
 
-- Go 1.26 или новее в рамках ветки 1.26
+- Go 1.26.3 или новее в рамках ветки 1.26
 - PostgreSQL 14+
 
 ## Go module
@@ -63,3 +63,29 @@ CONFIG_FILE=.env go run ./cmd/migrate
 Значения `.env` имеют приоритет над одноимёнными переменными shell. Файл `.env` не должен попадать в Git или Docker image.
 
 В production `CONFIG_FILE` запрещён: переменные окружения задаются напрямую в настройках приложений Dokploy. API получает HTTP, Telegram, JWT, CORS и cookie settings; worker — PostgreSQL, Telegram sender и reminder settings; migrate — только общие настройки и `DATABASE_URL`.
+
+## Проверки перед коммитом
+
+Lefthook запускает проверки для staged Go-файлов при каждом `git commit`:
+
+- форматирование через formatters из `.golangci.yml` с автоматическим добавлением исправлений в index;
+- `go vet ./...`;
+- полный `golangci-lint run` с настройками проекта.
+
+Lefthook и golangci-lint зафиксированы как Go tools в `go.mod`. После клонирования репозитория установите hook:
+
+```sh
+go tool lefthook install
+```
+
+Ручной запуск:
+
+```sh
+go tool lefthook run pre-commit
+```
+
+В исключительном случае hook можно временно отключить для одного коммита:
+
+```sh
+LEFTHOOK=0 git commit -m "message"
+```
