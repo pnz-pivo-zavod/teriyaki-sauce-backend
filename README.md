@@ -2,7 +2,7 @@
 
 Backend для персонального task tracker, работающего как Telegram Mini App. Проект будет включать HTTP API, Telegram-бота, отдельный worker напоминаний и CLI для миграций PostgreSQL.
 
-На текущем этапе создан только каркас проекта. Точки входа, загрузка конфигурации, подключение к базе данных и бизнес-логика будут добавлены на следующих этапах.
+На текущем этапе реализованы каркас проекта, типизированная загрузка конфигурации через `cleanenv` и минимальные точки входа. Подключение к базе данных и бизнес-логика будут добавлены на следующих этапах.
 
 ## Требования
 
@@ -36,11 +36,13 @@ github.com/pnz-pivo-zavod/teriyaki-sauce-backend
 └── migrations/                  # SQL-миграции goose
 ```
 
-## Будущие бинарники
+## Бинарники
 
-- `api` — HTTP API, авторизация Mini App и обработка Telegram updates.
-- `worker` — фоновая отправка напоминаний.
-- `migrate` — применение и откат миграций PostgreSQL.
+- `api` — будущий HTTP API, авторизация Mini App и обработка Telegram updates.
+- `worker` — будущая фоновая отправка напоминаний.
+- `migrate` — будущие применение и откат миграций PostgreSQL.
+
+Пока каждый бинарник только загружает и проверяет предназначенную ему конфигурацию, записывает структурированное Zerolog-событие и завершается.
 
 ## Локальная конфигурация
 
@@ -50,11 +52,14 @@ github.com/pnz-pivo-zavod/teriyaki-sauce-backend
 cp .env.example .env
 ```
 
-После реализации точек входа приложения будут запускаться с явно указанным файлом:
+Запускайте приложения с явно указанным файлом:
 
 ```sh
-CONFIG_FILE=.env make run-api
-CONFIG_FILE=.env make run-worker
+CONFIG_FILE=.env go run ./cmd/api
+CONFIG_FILE=.env go run ./cmd/worker
+CONFIG_FILE=.env go run ./cmd/migrate
 ```
 
-Файл `.env` не должен попадать в Git или Docker image. В production `CONFIG_FILE` использоваться не будет: переменные окружения задаются в настройках приложений Dokploy.
+Значения `.env` имеют приоритет над одноимёнными переменными shell. Файл `.env` не должен попадать в Git или Docker image.
+
+В production `CONFIG_FILE` запрещён: переменные окружения задаются напрямую в настройках приложений Dokploy. API получает HTTP, Telegram, JWT, CORS и cookie settings; worker — PostgreSQL, Telegram sender и reminder settings; migrate — только общие настройки и `DATABASE_URL`.
