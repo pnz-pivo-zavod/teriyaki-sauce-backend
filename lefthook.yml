@@ -1,0 +1,16 @@
+lefthook: go tool lefthook
+
+pre-commit:
+  jobs:
+    - name: format
+      glob: "*.go"
+      run: go tool golangci-lint fmt --config=.golangci.yml {staged_files}
+      stage_fixed: true
+
+    - name: vet
+      glob: "*.go"
+      run: go vet ./...
+
+    - name: lint
+      glob: "*.go"
+      run: go tool golangci-lint run --config=.golangci.yml
