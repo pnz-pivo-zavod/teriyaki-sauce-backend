@@ -20,6 +20,7 @@ var configEnvironmentNames = []string{
 	"CONFIG_FILE",
 	"APP_ENV",
 	"LOG_LEVEL",
+	"SHUTDOWN_TIMEOUT",
 	"DATABASE_URL",
 	"TELEGRAM_BOT_TOKEN",
 	"MINI_APP_URL",
@@ -67,6 +68,9 @@ func TestLoadAPIFromEnvironment(t *testing.T) {
 	if len(cfg.CORS.AllowedOrigins) != 2 {
 		t.Errorf("AllowedOrigins = %v, want two unique origins", cfg.CORS.AllowedOrigins)
 	}
+	if cfg.Lifecycle.ShutdownTimeout != 10*time.Second {
+		t.Errorf("ShutdownTimeout = %s, want 10s", cfg.Lifecycle.ShutdownTimeout)
+	}
 }
 
 func TestLoadWorkerFromEnvironment(t *testing.T) {
@@ -87,11 +91,57 @@ func TestLoadWorkerFromEnvironment(t *testing.T) {
 	if cfg.Reminder.BatchSize != 50 || cfg.Reminder.MaxAttempts != 4 {
 		t.Errorf("Reminder limits = %d/%d, want 50/4", cfg.Reminder.BatchSize, cfg.Reminder.MaxAttempts)
 	}
+	if cfg.Lifecycle.ShutdownTimeout != 10*time.Second {
+		t.Errorf("ShutdownTimeout = %s, want 10s", cfg.Lifecycle.ShutdownTimeout)
+	}
+}
+
+func TestLoadLifecycleConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    time.Duration
+		wantErr bool
+	}{
+		{name: "default", want: 10 * time.Second},
+		{name: "custom", value: "25s", want: 25 * time.Second},
+		{name: "zero", value: "0s", wantErr: true},
+		{name: "negative", value: "-1s", wantErr: true},
+		{name: "invalid", value: "secret-invalid-duration", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cleanEnvironment(t)
+			setValidWorkerEnvironment(t)
+			if tt.value != "" {
+				t.Setenv("SHUTDOWN_TIMEOUT", tt.value)
+			}
+
+			cfg, err := LoadWorker()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("LoadWorker() error = nil, want error")
+				}
+				if strings.Contains(err.Error(), tt.value) {
+					t.Fatalf("error exposed value: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("LoadWorker() error = %v", err)
+			}
+			if cfg.Lifecycle.ShutdownTimeout != tt.want {
+				t.Errorf("ShutdownTimeout = %s, want %s", cfg.Lifecycle.ShutdownTimeout, tt.want)
+			}
+		})
+	}
 }
 
 func TestLoadMigrateRequiresOnlyDatabaseAndCommonConfig(t *testing.T) {
 	cleanEnvironment(t)
 	t.Setenv("DATABASE_URL", testDatabaseURL)
+	t.Setenv("SHUTDOWN_TIMEOUT", "invalid-for-migrate")
 
 	cfg, err := LoadMigrate()
 	if err != nil {

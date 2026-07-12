@@ -73,6 +73,9 @@ func validateAPI(cfg *APIConfig) error {
 	if err := validateCookie(&cfg.Cookie, cfg.Common.Environment); err != nil {
 		return err
 	}
+	if err := validateLifecycle(cfg.Lifecycle); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -99,7 +102,7 @@ func validateWorker(cfg *WorkerConfig) error {
 	if cfg.Reminder.MaxAttempts < 1 || cfg.Reminder.MaxAttempts > 10 {
 		return invalid("REMINDER_MAX_ATTEMPTS", "must be between 1 and 10")
 	}
-	return nil
+	return validateLifecycle(cfg.Lifecycle)
 }
 
 func validateMigrate(cfg *MigrateConfig) error {
@@ -140,6 +143,13 @@ func validateDatabase(cfg DatabaseConfig) error {
 	}
 	if parsed.Host == "" || strings.Trim(parsed.Path, "/") == "" {
 		return invalid("DATABASE_URL", "must include a host and database name")
+	}
+	return nil
+}
+
+func validateLifecycle(cfg LifecycleConfig) error {
+	if cfg.ShutdownTimeout <= 0 {
+		return invalid("SHUTDOWN_TIMEOUT", "must be greater than zero")
 	}
 	return nil
 }
