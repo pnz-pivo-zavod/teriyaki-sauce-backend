@@ -50,21 +50,27 @@ type ReminderConfig struct {
 	MaxAttempts  int           `env:"REMINDER_MAX_ATTEMPTS" env-default:"4" env-description:"Maximum reminder delivery attempts"`
 }
 
+type LifecycleConfig struct {
+	ShutdownTimeout time.Duration `env:"SHUTDOWN_TIMEOUT" env-default:"10s" env-description:"Maximum graceful shutdown duration"`
+}
+
 type APIConfig struct {
-	Common   CommonConfig
-	Database DatabaseConfig
-	HTTP     HTTPConfig
-	Telegram TelegramAPIConfig
-	JWT      JWTConfig
-	CORS     CORSConfig
-	Cookie   CookieConfig
+	Common    CommonConfig
+	Database  DatabaseConfig
+	HTTP      HTTPConfig
+	Telegram  TelegramAPIConfig
+	JWT       JWTConfig
+	CORS      CORSConfig
+	Cookie    CookieConfig
+	Lifecycle LifecycleConfig
 }
 
 type WorkerConfig struct {
-	Common   CommonConfig
-	Database DatabaseConfig
-	Telegram TelegramSenderConfig
-	Reminder ReminderConfig
+	Common    CommonConfig
+	Database  DatabaseConfig
+	Telegram  TelegramSenderConfig
+	Reminder  ReminderConfig
+	Lifecycle LifecycleConfig
 }
 
 type MigrateConfig struct {

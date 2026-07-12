@@ -2,7 +2,13 @@
 
 Backend для персонального task tracker, работающего как Telegram Mini App. Проект будет включать HTTP API, Telegram-бота, отдельный worker напоминаний и CLI для миграций PostgreSQL.
 
-На текущем этапе реализованы каркас проекта, типизированная загрузка конфигурации через `cleanenv` и минимальные точки входа. Подключение к базе данных и бизнес-логика будут добавлены на следующих этапах.
+На текущем этапе реализованы каркас проекта, типизированная конфигурация, application context, структурированное логирование и lifecycle процессов. Подключение к базе данных и бизнес-логика будут добавлены на следующих этапах.
+
+## Контекст проекта для Codex
+
+Для каждого нового чата Codex использует корневой [`AGENTS.md`](AGENTS.md) и локальный skill [`maintain-project-context`](.codex/skills/maintain-project-context/SKILL.md). Актуальные требования, источники и roadmap находятся в [`PROJECT_CONTEXT.md`](.codex/skills/maintain-project-context/references/PROJECT_CONTEXT.md), а принятые архитектурные решения и журнал изменений — в [`ADR_LOG.md`](.codex/skills/maintain-project-context/references/ADR_LOG.md).
+
+Эти документы обновляются в том же изменении, в котором принимается ADR или меняются требования, архитектура, конфигурация либо статус этапа.
 
 ## Требования
 
@@ -26,12 +32,14 @@ github.com/pnz-pivo-zavod/teriyaki-sauce-backend
 │   └── worker/                  # Worker напоминаний
 ├── internal/
 │   ├── auth/                    # JWT и Telegram-аутентификация
+│   ├── appctx/                  # Application context и Zerolog
 │   ├── config/                  # Загрузка конфигурации через cleanenv
 │   ├── domain/                  # Доменные модели и ошибки
 │   ├── reminder/                # Планирование и отправка напоминаний
 │   ├── repository/postgres/     # PostgreSQL repositories
 │   ├── service/                 # Бизнес-логика
 │   ├── telegram/                # Интеграция с Telegram Bot API
+│   ├── lifecycle/               # Signals и graceful shutdown
 │   └── transport/http/          # HTTP handlers и middleware
 └── migrations/                  # SQL-миграции goose
 ```
@@ -42,7 +50,7 @@ github.com/pnz-pivo-zavod/teriyaki-sauce-backend
 - `worker` — будущая фоновая отправка напоминаний.
 - `migrate` — будущие применение и откат миграций PostgreSQL.
 
-Пока каждый бинарник только загружает и проверяет предназначенную ему конфигурацию, записывает структурированное Zerolog-событие и завершается.
+`api` и `worker` загружают конфигурацию и остаются запущенными до SIGINT или SIGTERM. После сигнала они выполняют graceful shutdown в пределах `SHUTDOWN_TIMEOUT`. `migrate` остаётся однократной командой и завершается сразу после проверки конфигурации.
 
 ## Локальная конфигурация
 
@@ -63,6 +71,20 @@ CONFIG_FILE=.env go run ./cmd/migrate
 Значения `.env` имеют приоритет над одноимёнными переменными shell. Файл `.env` не должен попадать в Git или Docker image.
 
 В production `CONFIG_FILE` запрещён: переменные окружения задаются напрямую в настройках приложений Dokploy. API получает HTTP, Telegram, JWT, CORS и cookie settings; worker — PostgreSQL, Telegram sender и reminder settings; migrate — только общие настройки и `DATABASE_URL`.
+
+## Логирование и завершение процессов
+
+В `development` Zerolog использует читаемый console output без ANSI-цветов. В `test` и `production` логи записываются в JSON. Все entrypoints пишут в stderr и добавляют поля `service` и `environment`.
+
+Токены Telegram, JWT и webhook secrets, cookie, заголовки авторизации и Telegram `initData` запрещено передавать в logger. Конфигурационные структуры и исходные ошибки загрузки конфигурации также не логируются целиком.
+
+Timeout graceful shutdown настраивается только для API и worker:
+
+```text
+SHUTDOWN_TIMEOUT=10s
+```
+
+Повторный сигнал во время shutdown принудительно завершает процесс. Migrate signal lifecycle не использует.
 
 ## Проверки перед коммитом
 

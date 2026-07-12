@@ -1,0 +1,4 @@
+interface:
+  display_name: "Teriyaki Project Context"
+  short_description: "Keep project context and ADRs current"
+  default_prompt: "Use $maintain-project-context to load the project requirements, sources, roadmap, and ADRs before working."
