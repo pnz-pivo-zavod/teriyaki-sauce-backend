@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -99,15 +97,7 @@ func Migrate(ctx appctx.Context, pool *pgxpool.Pool, cfg config.DatabaseConfig, 
 	return nil
 }
 
-// newProvider serializes migration runs with a PostgreSQL session advisory
-// lock, so a rolling deploy, a second api instance, and a manual migrate wait
-// for each other instead of racing on goose_db_version and DDL. The provider
-// also replaces the package-level goose configuration, which was global state
-// shared by every caller in the process.
 func newProvider(db *sql.DB, cfg config.DatabaseConfig, logger *zerolog.Logger) (*goose.Provider, error) {
-	// Retry once a second for the whole migration budget instead of goose's
-	// default five-second period, so the next instance of a rolling deploy
-	// starts as soon as the previous one releases the lock.
 	retries := max(cfg.MigrateTimeout/time.Second, 1)
 
 	locker, err := lock.NewPostgresSessionLocker(lock.WithLockTimeout(lockRetryPeriodSeconds, uint64(retries)))
@@ -170,18 +160,4 @@ func logResult(logger *zerolog.Logger, result *goose.MigrationResult) {
 		Str("direction", result.Direction).
 		Dur("duration", result.Duration).
 		Msg("migration_applied")
-}
-
-// gooseLogger keeps any goose output on the structured stderr logger instead of
-// the standard library logger goose writes to by default.
-type gooseLogger struct {
-	logger *zerolog.Logger
-}
-
-func (l gooseLogger) Printf(format string, v ...any) {
-	l.logger.Info().Msg(strings.TrimSpace(fmt.Sprintf(format, v...)))
-}
-
-func (l gooseLogger) Fatalf(format string, v ...any) {
-	l.logger.Error().Msg(strings.TrimSpace(fmt.Sprintf(format, v...)))
 }
