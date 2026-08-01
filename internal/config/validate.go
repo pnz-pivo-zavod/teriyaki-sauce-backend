@@ -144,6 +144,12 @@ func validateDatabase(cfg DatabaseConfig) error {
 	if parsed.Host == "" || strings.Trim(parsed.Path, "/") == "" {
 		return invalid("DATABASE_URL", "must include a host and database name")
 	}
+	if cfg.ConnectTimeout <= 0 {
+		return invalid("DATABASE_CONNECT_TIMEOUT", "must be greater than zero")
+	}
+	if cfg.MigrateTimeout <= 0 {
+		return invalid("DATABASE_MIGRATE_TIMEOUT", "must be greater than zero")
+	}
 	return nil
 }
 

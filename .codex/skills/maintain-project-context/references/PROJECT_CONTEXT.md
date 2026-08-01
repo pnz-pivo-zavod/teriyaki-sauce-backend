@@ -57,26 +57,33 @@ Never trust `initDataUnsafe` as backend authentication evidence and never log ra
 ## Current architecture
 
 ```text
-cmd/api       long-running API process; HTTP/router not connected yet
-cmd/worker    long-running reminder process; loop not connected yet
-cmd/migrate   one-shot migration process; goose commands not connected yet
+cmd/api       long-running API process; owns migrations via InitDB; HTTP/router not connected yet
+cmd/worker    long-running reminder process; connects to PostgreSQL only; loop not connected yet
+cmd/migrate   one-shot goose CLI; first argument is the command, default up
 
-internal/appctx       immutable context.Context + zerolog.Logger
-internal/config       typed cleanenv configuration and validation
-internal/lifecycle    SIGINT/SIGTERM and graceful shutdown orchestration
-internal/domain       future transport-independent models and errors
-internal/service      future business logic
-internal/repository   future PostgreSQL repositories
-internal/transport    future HTTP handlers and middleware
-internal/telegram     future Bot API integration
-internal/reminder     future reminder processing
+internal/appctx               immutable context.Context + zerolog.Logger
+internal/config               typed cleanenv configuration and validation
+internal/lifecycle            SIGINT/SIGTERM and graceful shutdown orchestration
+internal/repository/postgres  pgxpool lifecycle and goose migration runner
+internal/domain               future transport-independent models and errors
+internal/service              future business logic
+internal/transport            future HTTP handlers and middleware
+internal/telegram             future Bot API integration
+internal/reminder             future reminder processing
+migrations                    embedded goose SQL migrations
 ```
+
+PostgreSQL access goes through `internal/repository/postgres`. `Connect` opens a pgxpool and verifies it with a ping inside `DATABASE_CONNECT_TIMEOUT`. `Migrate` runs one goose command (`up`, `down`, or `status`) against a `database/sql` handle borrowed from the pool inside `DATABASE_MIGRATE_TIMEOUT`; closing that handle leaves the pool open. `InitDB` is `Connect` plus `up` and is used only by the api process. Both long-running binaries register a `postgres` shutdown task that closes the pool.
+
+Migration runs are serialized by a PostgreSQL session advisory lock through `goose.Provider` and `goose.WithSessionLocker`, so concurrent api instances during a rolling deploy and a manual migrate wait for each other instead of racing on `goose_db_version` and DDL. The waiting instance retries once a second for the whole `DATABASE_MIGRATE_TIMEOUT` budget. The provider replaces goose's package-level `SetBaseFS`/`SetDialect`/`SetLogger`, which were process-global state.
+
+The schema is a single initial migration covering `users`, `refresh_sessions`, `tasks`, `notes`, `tags`, and `task_tags`. `tasks` carries `user_id` ownership plus `completed`/`deleted` soft-delete flags and `notify_at`; partial indexes serve user task lists and the reminder worker. `refresh_sessions` stores SHA-256 token hashes, never raw tokens, and does not make `user_id` unique because refresh inserts the new session before deleting the old one.
 
 Application context is immutable. Each entrypoint creates a basic process logger before loading configuration, then passes it to `appctx.New` to apply the configured environment, level, and output format. Request-scoped data must be attached by deriving a new context; never mutate a process-wide context. Request ID support exists. Typed authenticated-user helpers will be added after the domain User and JWT middleware exist.
 
 ## Configuration contract
 
-Common variables: `APP_ENV`, `LOG_LEVEL`, `DATABASE_URL`.
+Common variables: `APP_ENV`, `LOG_LEVEL`, `DATABASE_URL`, `DATABASE_CONNECT_TIMEOUT`, `DATABASE_MIGRATE_TIMEOUT`.
 
 API additionally reads HTTP, Telegram update/webhook, JWT, CORS, cookie, and `SHUTDOWN_TIMEOUT` settings. Worker additionally reads Telegram sender, reminder, and `SHUTDOWN_TIMEOUT` settings. Migrate reads only common and PostgreSQL settings.
 
@@ -87,6 +94,8 @@ Important defaults:
 - `HTTP_ADDR=:8080`
 - `TELEGRAM_UPDATE_MODE=polling`; production requires webhook
 - `SHUTDOWN_TIMEOUT=10s`
+- `DATABASE_CONNECT_TIMEOUT=15s`
+- `DATABASE_MIGRATE_TIMEOUT=3m`; a migration that needs longer should be applied by hand
 - `REMINDER_POLL_INTERVAL=10s`
 - `REMINDER_LEASE_TIMEOUT=1m`
 - `REMINDER_BATCH_SIZE=50`
@@ -117,8 +126,8 @@ Use `.env.example` as the complete safe variable inventory. Do not duplicate sec
 |---|---|---|
 | 01 — Project skeleton | [KAN-2](https://practiceilya.atlassian.net/browse/KAN-2) | Done |
 | 02 — Configuration and entrypoints | [KAN-5](https://practiceilya.atlassian.net/browse/KAN-5) | Done |
-| 03 — Logging and process lifecycle | [KAN-4](https://practiceilya.atlassian.net/browse/KAN-4) | Implemented in working tree; Jira in progress |
-| 04 — PostgreSQL and migrations | [KAN-1](https://practiceilya.atlassian.net/browse/KAN-1) | Planned |
+| 03 — Logging and process lifecycle | [KAN-4](https://practiceilya.atlassian.net/browse/KAN-4) | Done |
+| 04 — PostgreSQL and migrations | [KAN-1](https://practiceilya.atlassian.net/browse/KAN-1) | Implemented in working tree; Jira in progress |
 | 05 — Domain layer | [KAN-3](https://practiceilya.atlassian.net/browse/KAN-3) | Planned |
 | 06 — Telegram initData validation | [KAN-6](https://practiceilya.atlassian.net/browse/KAN-6) | Planned |
 | 07 — Users and tokens | [KAN-7](https://practiceilya.atlassian.net/browse/KAN-7) | Planned |

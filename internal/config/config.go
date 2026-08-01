@@ -8,7 +8,9 @@ type CommonConfig struct {
 }
 
 type DatabaseConfig struct {
-	URL string `env:"DATABASE_URL" env-required:"true" env-description:"PostgreSQL connection URL"`
+	URL            string        `env:"DATABASE_URL" env-required:"true" env-description:"PostgreSQL connection URL"`
+	ConnectTimeout time.Duration `env:"DATABASE_CONNECT_TIMEOUT" env-default:"15s" env-description:"Maximum duration of the PostgreSQL connect and ping"`
+	MigrateTimeout time.Duration `env:"DATABASE_MIGRATE_TIMEOUT" env-default:"3m" env-description:"Maximum duration of a single migration run"`
 }
 
 type TelegramSenderConfig struct {

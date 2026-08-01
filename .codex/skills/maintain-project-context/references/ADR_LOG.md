@@ -167,6 +167,34 @@ Name registered cleanup operations `ShutdownTask` and execute them in reverse or
 
 Startup logging no longer requires a temporary application context or a special bootstrap environment. Entrypoint ownership of process metadata is explicit, cleanup registrations describe their intent, and startup/shutdown control flow can be read and tested as distinct phases. API and worker remain long-running; migrate remains one-shot.
 
+## ADR-010 — PostgreSQL pool ownership and initial schema
+
+- Status: Accepted
+- Date: 2026-08-01
+- Related: [pgxpool](https://pkg.go.dev/github.com/jackc/pgx/v5/pgxpool), [goose](https://github.com/pressly/goose), [KAN-1](https://practiceilya.atlassian.net/browse/KAN-1)
+
+### Context
+
+ADR-008 fixed the persistence stack but left open who applies migrations, how the pool is bounded and released, and how the stage specification maps onto an actual schema. The specification also conflicted with itself: it required a unique `user_id` in `refresh_sessions` while describing a refresh flow that inserts the new session before deleting the old one, marked `notes.task_id` unique although a task may carry several notes, and gave `tasks` no owner even though the Jira checklist requires ownership fields.
+
+### Decision
+
+Only `cmd/api` applies migrations, through `postgres.InitDB`, which connects, pings, and runs `goose up`. `cmd/worker` only connects. `cmd/migrate` stays a one-shot CLI whose first argument is `up`, `down`, or `status`, defaulting to `up`, for manual rollback and for migrations that should be watched by hand. Migrations are embedded with `go:embed` so every binary carries them.
+
+Owning migrations in one binary does not serialize that binary's own instances, so migrations run through `goose.Provider` with `goose.WithSessionLocker` and a PostgreSQL session advisory lock. A rolling deploy, a second api instance, and a manual migrate therefore wait for each other. The waiting side retries once a second for the whole `DATABASE_MIGRATE_TIMEOUT` budget instead of goose's five-second default period. The provider also replaces goose's package-level `SetBaseFS`, `SetDialect`, and `SetLogger`, which mutated process-global state shared by every caller.
+
+Connect and ping share `DATABASE_CONNECT_TIMEOUT` (15s); a migration run, including the wait for the lock, is bounded by `DATABASE_MIGRATE_TIMEOUT` (3m). Both long-running binaries register a `postgres` shutdown task so the pool closes inside the shared shutdown deadline. Migration results are logged as structured events, and a goose logger adapter keeps any remaining goose output off stdout.
+
+The initial schema is a single migration. `tasks` gains `user_id` ownership. `refresh_sessions.user_id` is a plain index and uniqueness moves to the token columns. `notes.task_id` is a plain index. Tokens are stored as SHA-256 hashes in `bytea`, never as raw tokens.
+
+### Consequences
+
+A single `go run ./cmd/api` brings up a working schema, and a Dokploy deployment needs no separate migration step, at the cost of api startup depending on migration success. Concurrent starts are safe: verified with three api instances and a manual migrate racing on an empty schema, where exactly one applied the migration and every process exited cleanly.
+
+Two consequences remain open. An instance waiting for the lock is still inside startup, before lifecycle installs signal handling, so a SIGTERM during a long migration terminates it without graceful shutdown; it holds no resources at that point. And the advisory lock only covers processes that migrate through this code, not a schema change applied by hand at the same time.
+
+Stage 7 must hash tokens before storing or comparing them.
+
 ## Project change log
 
 ### 2026-07-11
@@ -183,3 +211,13 @@ Startup logging no longer requires a temporary application context or a special 
 - Added `SHUTDOWN_TIMEOUT=10s` for API and worker; migrate intentionally ignores it.
 - Added this project-local context skill and made ADR/context maintenance a repository-wide instruction.
 - Refined stage 3 so entrypoints initialize the base logger directly, `appctx.New` applies configuration to it, and lifecycle uses explicit startup/shutdown phases with named shutdown tasks.
+
+### 2026-08-01
+
+- Stage 4 added `internal/repository/postgres` with pgxpool connect/ping, an embedded goose migration runner, and the initial six-table schema with list and reminder indexes.
+- Added `DATABASE_CONNECT_TIMEOUT=15s` and `DATABASE_MIGRATE_TIMEOUT=3m` to the database configuration of all three processes.
+- `cmd/api` now applies migrations on startup, `cmd/worker` only connects, and both close the pool through a named `postgres` shutdown task.
+- `cmd/migrate` became a real goose CLI taking an `up`, `down`, or `status` argument.
+- Review of stage 4 replaced the legacy package-level goose calls with `goose.Provider` and added a PostgreSQL session advisory lock, because owning migrations in the api binary does not serialize concurrent instances of that binary.
+- Entry point tests now assert the database failure path; the migration up/down/up cycle runs in `internal/repository/postgres` and is skipped unless `TEST_DATABASE_URL` is set.
+- Recorded that stage 3 is merged, correcting a stale roadmap status.
