@@ -83,7 +83,9 @@ Application context is immutable. Each entrypoint creates a basic process logger
 
 ## Configuration contract
 
-Common variables: `APP_ENV`, `LOG_LEVEL`, `DATABASE_URL`, `DATABASE_CONNECT_TIMEOUT`, `DATABASE_MIGRATE_TIMEOUT`.
+Common variables: `APP_ENV`, `LOG_LEVEL`, `DATABASE_URL`, `DATABASE_CONNECT_TIMEOUT`.
+
+`DATABASE_MIGRATE_TIMEOUT` belongs to the processes that migrate, so it is part of the API and migrate contracts only. The worker uses the plain `DatabaseConfig`, which makes it a compile-time error to pass worker configuration to the migration runner and keeps a broken migration timeout from stopping a process that never migrates.
 
 API additionally reads HTTP, Telegram update/webhook, JWT, CORS, cookie, and `SHUTDOWN_TIMEOUT` settings. Worker additionally reads Telegram sender, reminder, and `SHUTDOWN_TIMEOUT` settings. Migrate reads only common and PostgreSQL settings.
 

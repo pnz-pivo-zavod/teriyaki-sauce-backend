@@ -10,7 +10,14 @@ type CommonConfig struct {
 type DatabaseConfig struct {
 	URL            string        `env:"DATABASE_URL" env-required:"true" env-description:"PostgreSQL connection URL"`
 	ConnectTimeout time.Duration `env:"DATABASE_CONNECT_TIMEOUT" env-default:"15s" env-description:"Maximum duration of the PostgreSQL connect and ping"`
-	MigrateTimeout time.Duration `env:"DATABASE_MIGRATE_TIMEOUT" env-default:"3m" env-description:"Maximum duration of a single migration run"`
+}
+
+// DatabaseMigrationConfig is the database contract of the processes that run
+// migrations. The worker uses the plain DatabaseConfig so a broken migration
+// timeout cannot stop a process that never migrates.
+type DatabaseMigrationConfig struct {
+	DatabaseConfig
+	MigrateTimeout time.Duration `env:"DATABASE_MIGRATE_TIMEOUT" env-default:"3m" env-description:"Maximum duration of a single migration run, including the wait for the migration lock"`
 }
 
 type TelegramSenderConfig struct {
@@ -58,7 +65,7 @@ type LifecycleConfig struct {
 
 type APIConfig struct {
 	Common    CommonConfig
-	Database  DatabaseConfig
+	Database  DatabaseMigrationConfig
 	HTTP      HTTPConfig
 	Telegram  TelegramAPIConfig
 	JWT       JWTConfig
@@ -77,5 +84,5 @@ type WorkerConfig struct {
 
 type MigrateConfig struct {
 	Common   CommonConfig
-	Database DatabaseConfig
+	Database DatabaseMigrationConfig
 }

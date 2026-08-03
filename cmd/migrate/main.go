@@ -36,18 +36,22 @@ func run(base context.Context, output io.Writer, args []string) int {
 		return 1
 	}
 
+	command := postgres.CommandUp
+	if len(args) > 0 {
+		command = args[0]
+	}
+	if !postgres.SupportedCommand(command) {
+		application.Logger().Error().Str("command", command).Msg("unknown_migration_command")
+		return 1
+	}
+
 	//nolint:contextcheck // application already contains the base context passed to run.
-	pool, err := postgres.Connect(application, cfg.Database)
+	pool, err := postgres.Connect(application, cfg.Database.DatabaseConfig)
 	if err != nil {
 		application.Logger().Error().Msg("database_connection_failed")
 		return 1
 	}
 	defer pool.Close()
-
-	command := postgres.CommandUp
-	if len(args) > 0 {
-		command = args[0]
-	}
 
 	//nolint:contextcheck // application already contains the base context passed to run.
 	if err := postgres.Migrate(application, pool, cfg.Database, command); err != nil {

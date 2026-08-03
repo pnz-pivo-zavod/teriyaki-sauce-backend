@@ -193,6 +193,28 @@ func TestLoadDatabaseTimeouts(t *testing.T) {
 	}
 }
 
+func TestMigrationTimeoutAppliesOnlyToMigratingProcesses(t *testing.T) {
+	t.Run("worker ignores it", func(t *testing.T) {
+		cleanEnvironment(t)
+		setValidWorkerEnvironment(t)
+		t.Setenv("DATABASE_MIGRATE_TIMEOUT", "invalid-for-worker")
+
+		if _, err := LoadWorker(); err != nil {
+			t.Fatalf("LoadWorker() error = %v, the worker never runs migrations", err)
+		}
+	})
+
+	t.Run("api rejects it", func(t *testing.T) {
+		cleanEnvironment(t)
+		setValidAPIEnvironment(t)
+		t.Setenv("DATABASE_MIGRATE_TIMEOUT", "0s")
+
+		if _, err := LoadAPI(); err == nil {
+			t.Fatal("LoadAPI() error = nil, want an error for a zero migration timeout")
+		}
+	})
+}
+
 func TestLoadMigrateRequiresOnlyDatabaseAndCommonConfig(t *testing.T) {
 	cleanEnvironment(t)
 	t.Setenv("DATABASE_URL", testDatabaseURL)

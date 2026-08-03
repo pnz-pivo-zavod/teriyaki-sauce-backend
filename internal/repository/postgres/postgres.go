@@ -31,8 +31,17 @@ var (
 	ErrCommand = errors.New("unknown migration command")
 )
 
-func InitDB(ctx appctx.Context, cfg config.DatabaseConfig) (*pgxpool.Pool, error) {
-	pool, err := Connect(ctx, cfg)
+func SupportedCommand(command string) bool {
+	switch command {
+	case CommandUp, CommandDown, CommandStatus:
+		return true
+	default:
+		return false
+	}
+}
+
+func InitDB(ctx appctx.Context, cfg config.DatabaseMigrationConfig) (*pgxpool.Pool, error) {
+	pool, err := Connect(ctx, cfg.DatabaseConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -63,11 +72,15 @@ func Connect(ctx appctx.Context, cfg config.DatabaseConfig) (*pgxpool.Pool, erro
 	return pool, nil
 }
 
-func Migrate(ctx appctx.Context, pool *pgxpool.Pool, cfg config.DatabaseConfig, command string) error {
+func Migrate(ctx appctx.Context, pool *pgxpool.Pool, cfg config.DatabaseMigrationConfig, command string) error {
+	logger := ctx.Logger()
+	if !SupportedCommand(command) {
+		logger.Error().Str("command", command).Msg("unknown_migration_command")
+		return ErrCommand
+	}
+
 	migrateContext, cancel := context.WithTimeout(ctx, cfg.MigrateTimeout)
 	defer cancel()
-
-	logger := ctx.Logger()
 
 	// Closing this handle returns the borrowed connections; the pool stays open.
 	db := stdlib.OpenDBFromPool(pool)
@@ -84,11 +97,6 @@ func Migrate(ctx appctx.Context, pool *pgxpool.Pool, cfg config.DatabaseConfig, 
 	}
 
 	if err := runCommand(migrateContext, logger, provider, command); err != nil {
-		if errors.Is(err, ErrCommand) {
-			logger.Error().Str("command", command).Msg("unknown_migration_command")
-			return ErrCommand
-		}
-
 		logger.Error().Str("command", command).Msg("migration_failed")
 		return ErrMigrate
 	}
@@ -97,7 +105,7 @@ func Migrate(ctx appctx.Context, pool *pgxpool.Pool, cfg config.DatabaseConfig, 
 	return nil
 }
 
-func newProvider(db *sql.DB, cfg config.DatabaseConfig, logger *zerolog.Logger) (*goose.Provider, error) {
+func newProvider(db *sql.DB, cfg config.DatabaseMigrationConfig, logger *zerolog.Logger) (*goose.Provider, error) {
 	retries := max(cfg.MigrateTimeout/time.Second, 1)
 
 	locker, err := lock.NewPostgresSessionLocker(lock.WithLockTimeout(lockRetryPeriodSeconds, uint64(retries)))

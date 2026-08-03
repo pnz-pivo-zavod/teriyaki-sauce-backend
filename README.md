@@ -66,7 +66,7 @@ github.com/pnz-pivo-zavod/teriyaki-sauce-backend
 docker run --rm -d --name teriyaki-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=teriyaki_sauce -p 5432:5432 postgres:16
 ```
 
-Первый аргумент `migrate` — команда goose: `up`, `down` или `status`, по умолчанию `up`:
+Первый аргумент `migrate` — команда: `up`, `down` или `status`, по умолчанию `up`. Другие команды goose, включая деструктивные `reset` и `create`, отклоняются до подключения к базе:
 
 ```sh
 CONFIG_FILE=.env go run ./cmd/migrate up
@@ -80,12 +80,14 @@ CONFIG_FILE=.env go run ./cmd/migrate status
 CONFIG_FILE=.env go run ./cmd/migrate down
 ```
 
-Подключение и ping ограничены `DATABASE_CONNECT_TIMEOUT`, прогон миграций — `DATABASE_MIGRATE_TIMEOUT`:
+Подключение и ping ограничены `DATABASE_CONNECT_TIMEOUT`, прогон миграций вместе с ожиданием блокировки — `DATABASE_MIGRATE_TIMEOUT`:
 
 ```text
 DATABASE_CONNECT_TIMEOUT=15s
 DATABASE_MIGRATE_TIMEOUT=3m
 ```
+
+`DATABASE_MIGRATE_TIMEOUT` читают только `api` и `migrate`. `worker` миграции не прогоняет, поэтому эта переменная в его конфигурацию не входит и её некорректное значение его не остановит.
 
 Если миграция не укладывается в этот лимит, её лучше применить руками в базе и следить за выполнением, а не поднимать таймаут.
 

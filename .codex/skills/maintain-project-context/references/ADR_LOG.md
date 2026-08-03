@@ -181,6 +181,10 @@ ADR-008 fixed the persistence stack but left open who applies migrations, how th
 
 Only `cmd/api` applies migrations, through `postgres.InitDB`, which connects, pings, and runs `goose up`. `cmd/worker` only connects. `cmd/migrate` stays a one-shot CLI whose first argument is `up`, `down`, or `status`, defaulting to `up`, for manual rollback and for migrations that should be watched by hand. Migrations are embedded with `go:embed` so every binary carries them.
 
+The CLI accepts only that allowlist and rejects anything else before opening a database connection, because goose also understands destructive commands such as `reset` and `create`, which would write a file next to the running process rather than into `migrations/`.
+
+The database contract is split by capability. `DatabaseConfig` carries the URL and connect timeout; `DatabaseMigrationConfig` embeds it and adds `DATABASE_MIGRATE_TIMEOUT`. API and migrate use the wider type, the worker the narrower one, so passing worker configuration to the migration runner is a compile error and a broken migration timeout cannot stop a process that never migrates.
+
 Owning migrations in one binary does not serialize that binary's own instances, so migrations run through `goose.Provider` with `goose.WithSessionLocker` and a PostgreSQL session advisory lock. A rolling deploy, a second api instance, and a manual migrate therefore wait for each other. The waiting side retries once a second for the whole `DATABASE_MIGRATE_TIMEOUT` budget instead of goose's five-second default period. The provider also replaces goose's package-level `SetBaseFS`, `SetDialect`, and `SetLogger`, which mutated process-global state shared by every caller.
 
 Connect and ping share `DATABASE_CONNECT_TIMEOUT` (15s); a migration run, including the wait for the lock, is bounded by `DATABASE_MIGRATE_TIMEOUT` (3m). Both long-running binaries register a `postgres` shutdown task so the pool closes inside the shared shutdown deadline. Migration results are logged as structured events, and a goose logger adapter keeps any remaining goose output off stdout.
@@ -219,5 +223,6 @@ Stage 7 must hash tokens before storing or comparing them.
 - `cmd/api` now applies migrations on startup, `cmd/worker` only connects, and both close the pool through a named `postgres` shutdown task.
 - `cmd/migrate` became a real goose CLI taking an `up`, `down`, or `status` argument.
 - Review of stage 4 replaced the legacy package-level goose calls with `goose.Provider` and added a PostgreSQL session advisory lock, because owning migrations in the api binary does not serialize concurrent instances of that binary.
+- Review of stage 4 also split `DatabaseConfig` and `DatabaseMigrationConfig` so the worker no longer validates a migration timeout it never uses, and moved the migrate command allowlist ahead of the database connection.
 - Entry point tests now assert the database failure path; the migration up/down/up cycle runs in `internal/repository/postgres` and is skipped unless `TEST_DATABASE_URL` is set.
 - Recorded that stage 3 is merged, correcting a stale roadmap status.

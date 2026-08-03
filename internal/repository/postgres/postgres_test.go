@@ -35,7 +35,7 @@ func TestNewProviderReadsEmbeddedMigrations(t *testing.T) {
 	})
 
 	logger := zerolog.Nop()
-	provider, err := newProvider(db, config.DatabaseConfig{MigrateTimeout: time.Minute}, &logger)
+	provider, err := newProvider(db, config.DatabaseMigrationConfig{MigrateTimeout: time.Minute}, &logger)
 	if err != nil {
 		t.Fatalf("newProvider() error = %v, the embedded FS is empty or misnamed", err)
 	}
@@ -50,7 +50,6 @@ func TestConnectUnreachable(t *testing.T) {
 		// Port 1 refuses immediately; the timeout only bounds a blackholed host.
 		URL:            "postgres://user:connect-secret-do-not-leak@127.0.0.1:1/test",
 		ConnectTimeout: time.Second,
-		MigrateTimeout: time.Minute,
 	}
 
 	start := time.Now()
@@ -75,7 +74,6 @@ func TestConnectInvalidURL(t *testing.T) {
 	cfg := config.DatabaseConfig{
 		URL:            "postgres://user@127.0.0.1:1/test?sslmode=nonsense",
 		ConnectTimeout: time.Second,
-		MigrateTimeout: time.Minute,
 	}
 
 	if _, err := Connect(ctx, cfg); !errors.Is(err, ErrConnect) {
@@ -83,12 +81,41 @@ func TestConnectInvalidURL(t *testing.T) {
 	}
 }
 
-func TestMigrateRejectsUnknownCommand(t *testing.T) {
-	ctx, cfg := integrationContext(t)
-	pool := connectForTest(t, ctx, cfg)
+func TestSupportedCommand(t *testing.T) {
+	tests := []struct {
+		command string
+		want    bool
+	}{
+		{command: CommandUp, want: true},
+		{command: CommandDown, want: true},
+		{command: CommandStatus, want: true},
+		{command: "reset", want: false},
+		{command: "create", want: false},
+		{command: "fix", want: false},
+		{command: "down-to", want: false},
+		{command: "UP", want: false},
+		{command: "", want: false},
+	}
 
-	if err := Migrate(ctx, pool, cfg, "totally-not-a-command"); !errors.Is(err, ErrCommand) {
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			if got := SupportedCommand(tt.command); got != tt.want {
+				t.Errorf("SupportedCommand(%q) = %t, want %t", tt.command, got, tt.want)
+			}
+		})
+	}
+}
+
+// A nil pool proves an unsupported command is rejected before anything touches
+// the database.
+func TestMigrateRejectsUnknownCommandBeforeUsingThePool(t *testing.T) {
+	ctx, output := testContext(t)
+
+	if err := Migrate(ctx, nil, config.DatabaseMigrationConfig{}, "reset"); !errors.Is(err, ErrCommand) {
 		t.Fatalf("Migrate() error = %v, want ErrCommand", err)
+	}
+	if !strings.Contains(output.String(), "unknown_migration_command") {
+		t.Errorf("Migrate() output = %q", output.String())
 	}
 }
 
@@ -178,7 +205,7 @@ func TestMigrationWaitsForSessionLock(t *testing.T) {
 
 // integrationContext skips the test unless TEST_DATABASE_URL points at a
 // throwaway database, since these tests create and drop the whole schema.
-func integrationContext(t *testing.T) (appctx.Context, config.DatabaseConfig) {
+func integrationContext(t *testing.T) (appctx.Context, config.DatabaseMigrationConfig) {
 	t.Helper()
 
 	databaseURL := strings.TrimSpace(os.Getenv("TEST_DATABASE_URL"))
@@ -187,17 +214,19 @@ func integrationContext(t *testing.T) (appctx.Context, config.DatabaseConfig) {
 	}
 
 	ctx, _ := testContext(t)
-	return ctx, config.DatabaseConfig{
-		URL:            databaseURL,
-		ConnectTimeout: 15 * time.Second,
+	return ctx, config.DatabaseMigrationConfig{
+		DatabaseConfig: config.DatabaseConfig{
+			URL:            databaseURL,
+			ConnectTimeout: 15 * time.Second,
+		},
 		MigrateTimeout: 3 * time.Minute,
 	}
 }
 
-func connectForTest(t *testing.T, ctx appctx.Context, cfg config.DatabaseConfig) *pgxpool.Pool {
+func connectForTest(t *testing.T, ctx appctx.Context, cfg config.DatabaseMigrationConfig) *pgxpool.Pool {
 	t.Helper()
 
-	pool, err := Connect(ctx, cfg)
+	pool, err := Connect(ctx, cfg.DatabaseConfig)
 	if err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
