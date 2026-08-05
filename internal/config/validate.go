@@ -29,7 +29,7 @@ func validateAPI(cfg *APIConfig) error {
 	if err := validateCommon(&cfg.Common); err != nil {
 		return err
 	}
-	if err := validateDatabase(cfg.Database); err != nil {
+	if err := validateDatabaseMigration(cfg.Database); err != nil {
 		return err
 	}
 	if err := validateHTTP(&cfg.HTTP); err != nil {
@@ -109,7 +109,7 @@ func validateMigrate(cfg *MigrateConfig) error {
 	if err := validateCommon(&cfg.Common); err != nil {
 		return err
 	}
-	return validateDatabase(cfg.Database)
+	return validateDatabaseMigration(cfg.Database)
 }
 
 func validateCommon(cfg *CommonConfig) error {
@@ -143,6 +143,19 @@ func validateDatabase(cfg DatabaseConfig) error {
 	}
 	if parsed.Host == "" || strings.Trim(parsed.Path, "/") == "" {
 		return invalid("DATABASE_URL", "must include a host and database name")
+	}
+	if cfg.ConnectTimeout <= 0 {
+		return invalid("DATABASE_CONNECT_TIMEOUT", "must be greater than zero")
+	}
+	return nil
+}
+
+func validateDatabaseMigration(cfg DatabaseMigrationConfig) error {
+	if err := validateDatabase(cfg.DatabaseConfig); err != nil {
+		return err
+	}
+	if cfg.MigrateTimeout <= 0 {
+		return invalid("DATABASE_MIGRATE_TIMEOUT", "must be greater than zero")
 	}
 	return nil
 }

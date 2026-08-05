@@ -2,7 +2,7 @@
 
 Backend для персонального task tracker, работающего как Telegram Mini App. Проект будет включать HTTP API, Telegram-бота, отдельный worker напоминаний и CLI для миграций PostgreSQL.
 
-На текущем этапе реализованы каркас проекта, типизированная конфигурация, application context, структурированное логирование и lifecycle процессов. Подключение к базе данных и бизнес-логика будут добавлены на следующих этапах.
+На текущем этапе реализованы каркас проекта, типизированная конфигурация, application context, структурированное логирование, lifecycle процессов, подключение к PostgreSQL и схема базы данных с миграциями goose. Бизнес-логика и HTTP API будут добавлены на следующих этапах.
 
 ## Контекст проекта для Codex
 
@@ -48,9 +48,54 @@ github.com/pnz-pivo-zavod/teriyaki-sauce-backend
 
 - `api` — будущий HTTP API, авторизация Mini App и обработка Telegram updates.
 - `worker` — будущая фоновая отправка напоминаний.
-- `migrate` — будущие применение и откат миграций PostgreSQL.
+- `migrate` — применение и откат миграций PostgreSQL.
 
-`api` и `worker` загружают конфигурацию и остаются запущенными до SIGINT или SIGTERM. После сигнала они выполняют graceful shutdown в пределах `SHUTDOWN_TIMEOUT`. `migrate` остаётся однократной командой и завершается сразу после проверки конфигурации.
+`api` и `worker` загружают конфигурацию и остаются запущенными до SIGINT или SIGTERM. После сигнала они выполняют graceful shutdown в пределах `SHUTDOWN_TIMEOUT`. `migrate` остаётся однократной командой.
+
+## PostgreSQL и миграции
+
+Схема разворачивается миграциями goose из `migrations/`. SQL встроен в бинарники через `go:embed`, отдельных файлов при деплое не нужно.
+
+Миграции прогоняет `api` при старте (подключение, ping и `goose up` одним шагом). `worker` только подключается к базе. `migrate` остаётся ручным CLI для отката и для миграций, за которыми нужно наблюдать глазами.
+
+Одновременные прогоны сериализуются session advisory lock в PostgreSQL, поэтому rolling deploy, вторая инстанция `api` и ручной `migrate` ждут друг друга, а не конкурируют за `goose_db_version` и DDL. Ожидающая сторона повторяет попытку раз в секунду в пределах `DATABASE_MIGRATE_TIMEOUT`.
+
+Локальная база для разработки:
+
+```sh
+docker run --rm -d --name teriyaki-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=teriyaki_sauce -p 5432:5432 postgres:16
+```
+
+Первый аргумент `migrate` — команда: `up`, `down` или `status`, по умолчанию `up`. Другие команды goose, включая деструктивные `reset` и `create`, отклоняются до подключения к базе:
+
+```sh
+CONFIG_FILE=.env go run ./cmd/migrate up
+```
+
+```sh
+CONFIG_FILE=.env go run ./cmd/migrate status
+```
+
+```sh
+CONFIG_FILE=.env go run ./cmd/migrate down
+```
+
+Подключение и ping ограничены `DATABASE_CONNECT_TIMEOUT`, прогон миграций вместе с ожиданием блокировки — `DATABASE_MIGRATE_TIMEOUT`:
+
+```text
+DATABASE_CONNECT_TIMEOUT=15s
+DATABASE_MIGRATE_TIMEOUT=3m
+```
+
+`DATABASE_MIGRATE_TIMEOUT` читают только `api` и `migrate`. `worker` миграции не прогоняет, поэтому эта переменная в его конфигурацию не входит и её некорректное значение его не остановит.
+
+Если миграция не укладывается в этот лимит, её лучше применить руками в базе и следить за выполнением, а не поднимать таймаут.
+
+Интеграционные тесты цикла up/down/up пропускаются, пока не задан `TEST_DATABASE_URL`:
+
+```sh
+TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/teriyaki_sauce?sslmode=disable' go test ./internal/repository/...
+```
 
 ## Локальная конфигурация
 
@@ -84,7 +129,7 @@ Timeout graceful shutdown настраивается только для API и 
 SHUTDOWN_TIMEOUT=10s
 ```
 
-Повторный сигнал во время shutdown принудительно завершает процесс. Migrate signal lifecycle не использует.
+Повторный сигнал во время shutdown принудительно завершает процесс. Migrate signal lifecycle не использует. Пул PostgreSQL закрывается зарегистрированной shutdown task `postgres` в пределах общего дедлайна.
 
 ## Проверки перед коммитом
 

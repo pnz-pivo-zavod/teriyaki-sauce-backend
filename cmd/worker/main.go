@@ -10,6 +10,7 @@ import (
 	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/internal/appctx"
 	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/internal/config"
 	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/internal/lifecycle"
+	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/internal/repository/postgres"
 )
 
 const serviceName = "worker"
@@ -36,9 +37,23 @@ func run(base context.Context, output io.Writer) int {
 		return 1
 	}
 
+	// Migrations belong to the api process; the worker only connects.
+	//nolint:contextcheck // application already contains the base context passed to run.
+	pool, err := postgres.Connect(application, cfg.Database)
+	if err != nil {
+		application.Logger().Error().Msg("database_initialization_failed")
+		return 1
+	}
+
 	application.Logger().Info().Msg("application_started")
 	//nolint:contextcheck // application already contains the base context passed to run.
-	if err := lifecycle.Run(application, cfg.Lifecycle.ShutdownTimeout, nil); err != nil {
+	if err := lifecycle.Run(application, cfg.Lifecycle.ShutdownTimeout, nil, lifecycle.ShutdownTask{
+		Name: "postgres",
+		Run: func(appctx.Context) error {
+			pool.Close()
+			return nil
+		},
+	}); err != nil {
 		application.Logger().Error().Msg("application_lifecycle_failed")
 		return 1
 	}

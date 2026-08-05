@@ -22,6 +22,8 @@ var configEnvironmentNames = []string{
 	"LOG_LEVEL",
 	"SHUTDOWN_TIMEOUT",
 	"DATABASE_URL",
+	"DATABASE_CONNECT_TIMEOUT",
+	"DATABASE_MIGRATE_TIMEOUT",
 	"TELEGRAM_BOT_TOKEN",
 	"MINI_APP_URL",
 	"HTTP_ADDR",
@@ -136,6 +138,81 @@ func TestLoadLifecycleConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLoadDatabaseTimeouts(t *testing.T) {
+	tests := []struct {
+		name     string
+		variable string
+		value    string
+		want     time.Duration
+		wantErr  bool
+	}{
+		{name: "connect default", variable: "DATABASE_CONNECT_TIMEOUT", want: 15 * time.Second},
+		{name: "connect custom", variable: "DATABASE_CONNECT_TIMEOUT", value: "5s", want: 5 * time.Second},
+		{name: "connect zero", variable: "DATABASE_CONNECT_TIMEOUT", value: "0s", wantErr: true},
+		{name: "connect negative", variable: "DATABASE_CONNECT_TIMEOUT", value: "-1s", wantErr: true},
+		{name: "connect invalid", variable: "DATABASE_CONNECT_TIMEOUT", value: "secret-invalid-duration", wantErr: true},
+		{name: "migrate default", variable: "DATABASE_MIGRATE_TIMEOUT", want: 3 * time.Minute},
+		{name: "migrate custom", variable: "DATABASE_MIGRATE_TIMEOUT", value: "30s", want: 30 * time.Second},
+		{name: "migrate zero", variable: "DATABASE_MIGRATE_TIMEOUT", value: "0s", wantErr: true},
+		{name: "migrate negative", variable: "DATABASE_MIGRATE_TIMEOUT", value: "-1s", wantErr: true},
+		{name: "migrate invalid", variable: "DATABASE_MIGRATE_TIMEOUT", value: "secret-invalid-duration", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cleanEnvironment(t)
+			t.Setenv("DATABASE_URL", testDatabaseURL)
+			if tt.value != "" {
+				t.Setenv(tt.variable, tt.value)
+			}
+
+			cfg, err := LoadMigrate()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("LoadMigrate() error = nil, want error")
+				}
+				if strings.Contains(err.Error(), tt.value) {
+					t.Fatalf("error exposed value: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("LoadMigrate() error = %v", err)
+			}
+
+			got := cfg.Database.ConnectTimeout
+			if tt.variable == "DATABASE_MIGRATE_TIMEOUT" {
+				got = cfg.Database.MigrateTimeout
+			}
+			if got != tt.want {
+				t.Errorf("%s = %s, want %s", tt.variable, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMigrationTimeoutAppliesOnlyToMigratingProcesses(t *testing.T) {
+	t.Run("worker ignores it", func(t *testing.T) {
+		cleanEnvironment(t)
+		setValidWorkerEnvironment(t)
+		t.Setenv("DATABASE_MIGRATE_TIMEOUT", "invalid-for-worker")
+
+		if _, err := LoadWorker(); err != nil {
+			t.Fatalf("LoadWorker() error = %v, the worker never runs migrations", err)
+		}
+	})
+
+	t.Run("api rejects it", func(t *testing.T) {
+		cleanEnvironment(t)
+		setValidAPIEnvironment(t)
+		t.Setenv("DATABASE_MIGRATE_TIMEOUT", "0s")
+
+		if _, err := LoadAPI(); err == nil {
+			t.Fatal("LoadAPI() error = nil, want an error for a zero migration timeout")
+		}
+	})
 }
 
 func TestLoadMigrateRequiresOnlyDatabaseAndCommonConfig(t *testing.T) {
