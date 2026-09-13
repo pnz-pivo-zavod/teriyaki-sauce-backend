@@ -94,7 +94,7 @@ The same type can flow through lifecycle and standard context-aware APIs. Reques
 
 ## ADR-006 — Logging formats and secret handling
 
-- Status: Accepted
+- Status: Superseded by ADR-009
 - Date: 2026-07-12
 - Related: [zerolog](https://github.com/rs/zerolog), [KAN-4](https://practiceilya.atlassian.net/browse/KAN-4)
 
@@ -112,7 +112,7 @@ Logs are suitable for Dokploy ingestion and remain safe by construction at curre
 
 ## ADR-007 — Bounded process lifecycle
 
-- Status: Accepted
+- Status: Superseded by ADR-009
 - Date: 2026-07-12
 - Related: [KAN-4](https://practiceilya.atlassian.net/browse/KAN-4)
 
@@ -252,3 +252,6 @@ Tool versions stay pinned and reproducible locally and in CI, and the applicatio
 - REF-05 removed the duplicate `go vet` pre-commit job, trimmed `.golangci.yml` to `gocognit` + `funlen` for complexity, `gci` + `gofumpt` for formatting, dropped no-op `testifylint`/`testableexamples` and default-repeating `run`/`output` settings, and lowered `lll` to 180.
 - REF-05 made the pull request workflow build and run `go test -race ./...` before linting, and run golangci-lint through `go tool` so its version is pinned only in `go.mod`.
 - REF-06 moved golangci-lint and Lefthook `tool` directives from the root `go.mod` into a separate `tools/go.mod` module (ADR-011, partially superseding ADR-004) without changing tool versions; all tool commands now pass `-modfile=tools/go.mod`.
+- REF-07 removed placeholder `.gitkeep` directories (`api`, `internal/auth`, `domain`, `reminder`, `service`, `telegram`, `transport/http`) and `.dockerignore`; each returns with the stage that adds code or a Dockerfile (stage 17).
+- REF-07 removed `TESTING_PLAN.md`; stage test plans now live in pull request descriptions.
+- REF-07 cut the README down to a quickstart that links to the project context instead of restating it, marked stage 04 as done, and marked ADR-006 and ADR-007 as superseded by ADR-009.

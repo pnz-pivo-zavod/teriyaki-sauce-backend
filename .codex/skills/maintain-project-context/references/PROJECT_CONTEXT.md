@@ -65,13 +65,11 @@ internal/appctx               immutable context.Context + zerolog.Logger
 internal/config               typed cleanenv configuration and validation
 internal/lifecycle            SIGINT/SIGTERM and graceful shutdown orchestration
 internal/repository/postgres  pgxpool lifecycle and goose migration runner
-internal/domain               future transport-independent models and errors
-internal/service              future business logic
-internal/transport            future HTTP handlers and middleware
-internal/telegram             future Bot API integration
-internal/reminder             future reminder processing
 migrations                    embedded goose SQL migrations
+tools                         separate module pinning golangci-lint and Lefthook
 ```
+
+Packages are created by the stage that puts code into them; there are no placeholder directories. The HTTP transport package must not be named `http`, because that shadows `net/http` (for example `internal/httpapi`).
 
 PostgreSQL access goes through `internal/repository/postgres`. `Connect` opens a pgxpool and verifies it with a ping inside `DATABASE_CONNECT_TIMEOUT`. `Migrate` runs one goose command (`up`, `down`, or `status`) against a `database/sql` handle borrowed from the pool inside `DATABASE_MIGRATE_TIMEOUT`; closing that handle leaves the pool open. `InitDB` is `Connect` plus `up` and is used only by the api process. Both long-running binaries register a `postgres` shutdown task that closes the pool.
 
@@ -121,7 +119,7 @@ Use `.env.example` as the complete safe variable inventory. Do not duplicate sec
 - Pull requests run `go build ./cmd/...`, `go test -race ./...`, and `go tool golangci-lint run` through GitHub Actions; the linter version comes from `tools/go.mod` only.
 - Lefthook pre-commit runs formatting and full linting (`govet` runs inside golangci-lint).
 - Required acceptance for implementation stages: `go test ./...`, `go test -race ./...`, `go build ./cmd/...`, golangci-lint, and relevant smoke/integration tests.
-- New test-heavy stages maintain `TESTING_PLAN.md` when the testing skill requires it.
+- The test plan of a stage lives in its pull request description, not in a repository file.
 
 ## Roadmap
 
@@ -130,7 +128,7 @@ Use `.env.example` as the complete safe variable inventory. Do not duplicate sec
 | 01 — Project skeleton | [KAN-2](https://practiceilya.atlassian.net/browse/KAN-2) | Done |
 | 02 — Configuration and entrypoints | [KAN-5](https://practiceilya.atlassian.net/browse/KAN-5) | Done |
 | 03 — Logging and process lifecycle | [KAN-4](https://practiceilya.atlassian.net/browse/KAN-4) | Done |
-| 04 — PostgreSQL and migrations | [KAN-1](https://practiceilya.atlassian.net/browse/KAN-1) | Implemented in working tree; Jira in progress |
+| 04 — PostgreSQL and migrations | [KAN-1](https://practiceilya.atlassian.net/browse/KAN-1) | Done |
 | 05 — Domain layer | [KAN-3](https://practiceilya.atlassian.net/browse/KAN-3) | Planned |
 | 06 — Telegram initData validation | [KAN-6](https://practiceilya.atlassian.net/browse/KAN-6) | Planned |
 | 07 — Users and tokens | [KAN-7](https://practiceilya.atlassian.net/browse/KAN-7) | Planned |
