@@ -138,16 +138,16 @@ Lefthook запускает проверки для staged Go-файлов пр�
 - форматирование через formatters из `.golangci.yml` с автоматическим добавлением исправлений в index;
 - полный `golangci-lint run` с настройками проекта.
 
-Lefthook и golangci-lint зафиксированы как Go tools в `go.mod`. После клонирования репозитория установите hook:
+Lefthook и golangci-lint зафиксированы как Go tools в отдельном модуле `tools/go.mod`, чтобы не тянуть их зависимости в модуль приложения. После клонирования репозитория установите hook:
 
 ```sh
-go tool lefthook install
+go tool -modfile=tools/go.mod lefthook install
 ```
 
 Ручной запуск:
 
 ```sh
-go tool lefthook run pre-commit
+go tool -modfile=tools/go.mod lefthook run pre-commit
 ```
 
 В исключительном случае hook можно временно отключить для одного коммита:

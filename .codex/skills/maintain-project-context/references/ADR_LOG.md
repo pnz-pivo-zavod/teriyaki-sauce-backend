@@ -58,7 +58,7 @@ Frontend sends the original signed `initData` to `/login`; backend validates its
 
 ## ADR-004 — Quality gates and local hooks
 
-- Status: Accepted
+- Status: Accepted; tool pinning superseded by ADR-011
 - Date: 2026-07-11
 - Related: [golangci-lint](https://github.com/golangci/golangci-lint), [Lefthook](https://github.com/evilmartians/lefthook)
 
@@ -199,6 +199,24 @@ Two consequences remain open. An instance waiting for the lock is still inside s
 
 Stage 7 must hash tokens before storing or comparing them.
 
+## ADR-011 — Separate tools module
+
+- Status: Accepted
+- Date: 2026-09-13
+- Related: [Go tool dependencies](https://go.dev/doc/modules/managing-dependencies#tools), ADR-004
+
+### Context
+
+ADR-004 pinned golangci-lint and Lefthook through `tool` directives in the root `go.mod`. That put roughly 230 linter and hook dependencies into the application module graph, so every `go mod tidy`, dependency review, and vulnerability scan of the service also covered tooling that never ships in a binary.
+
+### Decision
+
+Tool directives move to a separate `tools/go.mod` module (`github.com/pnz-pivo-zavod/teriyaki-sauce-backend/tools`). Tools run as `go tool -modfile=tools/go.mod golangci-lint ...` and `go tool -modfile=tools/go.mod lefthook ...` in Lefthook, GitHub Actions, and the README. The root `go.mod` keeps only application dependencies. The rest of ADR-004 stays in force.
+
+### Consequences
+
+Tool versions stay pinned and reproducible locally and in CI, and the application module graph shrinks to runtime and test dependencies. Commands get longer, tool upgrades run `go get -tool` inside `tools/`, and existing clones must rerun `lefthook install` so the git hook calls the new command.
+
 ## Project change log
 
 ### 2026-07-11
@@ -233,3 +251,4 @@ Stage 7 must hash tokens before storing or comparing them.
 - REF-01 removed the duplicate command check at the start of `postgres.Migrate`; the allowlist gate before connecting stays in `cmd/migrate`, and `Migrate` keeps its `default` branch returning `ErrCommand`.
 - REF-05 removed the duplicate `go vet` pre-commit job, trimmed `.golangci.yml` to `gocognit` + `funlen` for complexity, `gci` + `gofumpt` for formatting, dropped no-op `testifylint`/`testableexamples` and default-repeating `run`/`output` settings, and lowered `lll` to 180.
 - REF-05 made the pull request workflow build and run `go test -race ./...` before linting, and run golangci-lint through `go tool` so its version is pinned only in `go.mod`.
+- REF-06 moved golangci-lint and Lefthook `tool` directives from the root `go.mod` into a separate `tools/go.mod` module (ADR-011, partially superseding ADR-004) without changing tool versions; all tool commands now pass `-modfile=tools/go.mod`.
