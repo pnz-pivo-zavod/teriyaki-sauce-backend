@@ -28,7 +28,8 @@ func run(base context.Context, output io.Writer) int {
 	}
 
 	logger = logging.Configure(logger, output, cfg.Common)
-	ctx := logger.WithContext(base)
+	// Signals cancel startup too, so SIGTERM while waiting for the migration lock exits cleanly.
+	ctx := lifecycle.NotifyContext(logger.WithContext(base))
 
 	// Migrations belong to the api process; the worker only connects.
 	pool, err := postgres.Connect(ctx, cfg.Database)

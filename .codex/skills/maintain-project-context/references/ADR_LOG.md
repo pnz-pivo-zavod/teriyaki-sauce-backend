@@ -195,7 +195,7 @@ The initial schema is a single migration. `tasks` gains `user_id` ownership. `re
 
 A single `go run ./cmd/api` brings up a working schema, and a Dokploy deployment needs no separate migration step, at the cost of api startup depending on migration success. Concurrent starts are safe: verified with three api instances and a manual migrate racing on an empty schema, where exactly one applied the migration and every process exited cleanly.
 
-Two consequences remain open. An instance waiting for the lock is still inside startup, before lifecycle installs signal handling, so a SIGTERM during a long migration terminates it without graceful shutdown; it holds no resources at that point. And the advisory lock only covers processes that migrate through this code, not a schema change applied by hand at the same time.
+One consequence remains open: the advisory lock only covers processes that migrate through this code, not a schema change applied by hand at the same time. The other, a SIGTERM during the lock wait terminating the process without graceful handling, was closed on 2026-09-13 (REF-03) by creating the signal context before `InitDB`.
 
 Stage 7 must hash tokens before storing or comparing them.
 
@@ -277,3 +277,6 @@ Immutability is kept for free because `context.Context` is immutable, and no `no
 - REF-07 removed `TESTING_PLAN.md`; stage test plans now live in pull request descriptions.
 - REF-07 cut the README down to a quickstart that links to the project context instead of restating it, marked stage 04 as done, and marked ADR-006 and ADR-007 as superseded by ADR-009.
 - REF-02 replaced `internal/appctx` with plain `context.Context` plus `zerolog.Ctx` and a small `internal/logging.Configure` (ADR-012, superseding ADR-005), loaded `LOG_LEVEL` as `zerolog.Level`, and removed all six `//nolint:contextcheck` directives.
+- REF-03 reduced `internal/lifecycle` to one public `Run(ctx, timeout, run, tasks...)` plus `NotifyContext`: removed the test-only `run` seam, the `RunFunc`/`ShutdownFunc`/`triggerResult` types, the `timeout <= 0` branch, the `unnamed` task fallback, and skipping nil tasks, and runs all shutdown tasks in one goroutine. ADR-009 invariants are unchanged: reverse task order, one shared deadline, sentinel errors, `context.Canceled` after a signal is not an error, a repeated signal terminates.
+- REF-03 moved signal context creation into api and worker before database initialization, so SIGTERM during the migration lock wait exits promptly (closes an open consequence of ADR-010).
+- REF-03 rewrote lifecycle tests as a table through the public `Run` in `give*`/`want*` form and added a SIGTERM test for `NotifyContext`.

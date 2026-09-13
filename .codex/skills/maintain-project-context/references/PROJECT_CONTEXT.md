@@ -109,8 +109,8 @@ Use `.env.example` as the complete safe variable inventory. Do not duplicate sec
 - Entrypoints write to stderr and add `service` and `environment` fields.
 - Do not log configuration structs, Telegram/JWT/webhook secrets, cookies, Authorization, or initData.
 - Configuration and lifecycle expose safe sentinel errors rather than raw causes.
-- API and worker wait for SIGINT/SIGTERM and share a bounded graceful shutdown deadline.
-- Named shutdown tasks run in reverse registration order. Lifecycle orchestration keeps application startup, shutdown-trigger waiting, and graceful shutdown in separate functions. A repeated signal may terminate immediately.
+- API and worker derive their context from `lifecycle.NotifyContext` before connecting to PostgreSQL, so SIGINT/SIGTERM also cancels startup, including the wait for the migration lock. The first signal restores default handling, so a repeated signal terminates immediately.
+- `lifecycle.Run(ctx, timeout, run, tasks...)` waits for ctx or for `run` to return, then runs named shutdown tasks in reverse registration order and waits for `run`, all within one shared deadline. `context.Canceled` from `run` after a shutdown request is not an error.
 
 ## Quality gates
 

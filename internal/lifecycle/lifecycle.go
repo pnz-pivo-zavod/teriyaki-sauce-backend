@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"slices"
-	"strings"
 	"syscall"
 	"time"
 
@@ -19,172 +18,93 @@ var (
 	ErrShutdownTimeout = errors.New("application shutdown timed out")
 )
 
-type (
-	RunFunc      func(context.Context) error
-	ShutdownFunc func(context.Context) error
-)
-
 type ShutdownTask struct {
 	Name string
-	Run  ShutdownFunc
+	Run  func(context.Context) error
 }
 
-type triggerResult struct {
-	runErr            error
-	runCompleted      bool
-	shutdownRequested bool
+// NotifyContext is canceled by the first SIGINT or SIGTERM. Default signal
+// handling is restored right after, so a repeated signal terminates the process.
+func NotifyContext(ctx context.Context) context.Context {
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	context.AfterFunc(ctx, stop)
+
+	return ctx
 }
 
-func Run(ctx context.Context, timeout time.Duration, runFn RunFunc, shutdownTasks ...ShutdownTask) error {
-	signalContext, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	return run(signalContext, timeout, stop, runFn, shutdownTasks...)
-}
-
-func run(ctx context.Context, timeout time.Duration, stop context.CancelFunc, runFn RunFunc, shutdownTasks ...ShutdownTask) error {
-	if stop == nil {
-		stop = func() {}
-	}
-
-	runDone := startApplication(ctx, runFn)
-	trigger := waitForShutdown(ctx, runDone)
-	stop()
-
-	return shutdownApplication(ctx, timeout, runDone, trigger, shutdownTasks)
-}
-
-func startApplication(ctx context.Context, runFn RunFunc) <-chan error {
-	if runFn == nil {
-		return nil
+// Run calls run (or waits for ctx when run is nil) until ctx is canceled or run
+// returns, then runs tasks in reverse order within one shared timeout.
+func Run(ctx context.Context, timeout time.Duration, run func(context.Context) error, tasks ...ShutdownTask) error {
+	if run == nil {
+		run = func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }
 	}
 
 	runDone := make(chan error, 1)
-	go func() {
-		runDone <- runFn(ctx)
-	}()
+	go func() { runDone <- run(ctx) }()
 
-	return runDone
-}
-
-func waitForShutdown(ctx context.Context, runDone <-chan error) triggerResult {
-	if runDone == nil {
-		<-ctx.Done()
-		return triggerResult{shutdownRequested: true}
-	}
-
+	var runErr error
+	runFinished := false
 	select {
 	case <-ctx.Done():
-		return triggerResult{shutdownRequested: true}
-	case err := <-runDone:
-		return triggerResult{runErr: err, runCompleted: true}
+	case runErr = <-runDone:
+		runFinished = true
 	}
-}
 
-func shutdownApplication(ctx context.Context, timeout time.Duration, runDone <-chan error, trigger triggerResult, shutdownTasks []ShutdownTask) error {
 	logger := zerolog.Ctx(ctx)
 	logger.Info().Dur("timeout", timeout).Msg("shutdown_started")
-	if timeout <= 0 {
+
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	defer cancel()
+
+	tasksFailed := make(chan bool, 1)
+	go func() { tasksFailed <- runShutdownTasks(shutdownCtx, tasks) }()
+
+	var failed bool
+	select {
+	case failed = <-tasksFailed:
+	case <-shutdownCtx.Done():
 		logger.Error().Msg("shutdown_timed_out")
 		return ErrShutdownTimeout
 	}
 
-	base := context.WithoutCancel(ctx)
-	shutdownContext, cancel := context.WithTimeout(base, timeout)
-	defer cancel()
-
-	shutdownFailed, err := runShutdownTasks(shutdownContext, shutdownTasks)
-	if err != nil {
-		return err
-	}
-
-	runErr := trigger.runErr
-	if shouldWaitForApplication(runDone, trigger) {
-		var waitErr error
-		runErr, waitErr = waitForApplication(shutdownContext, runDone)
-		if waitErr != nil {
-			return waitErr
+	if !runFinished {
+		select {
+		case runErr = <-runDone:
+		case <-shutdownCtx.Done():
+			logger.Error().Msg("shutdown_timed_out")
+			return ErrShutdownTimeout
 		}
 	}
 
-	if shutdownFailed {
+	if failed {
 		return ErrShutdown
 	}
 
-	if applicationRunFailed(runDone, trigger, runErr) {
+	// context.Canceled after a shutdown request is the expected way for run to stop.
+	if runErr != nil && (ctx.Err() == nil || !errors.Is(runErr, context.Canceled)) {
 		logger.Error().Msg("application_runtime_failed")
 		return ErrRuntime
 	}
 
 	logger.Info().Msg("shutdown_completed")
+
 	return nil
 }
 
-func shouldWaitForApplication(runDone <-chan error, trigger triggerResult) bool {
-	return runDone != nil && !trigger.runCompleted
-}
-
-func applicationRunFailed(runDone <-chan error, trigger triggerResult, runErr error) bool {
-	if runDone == nil || runErr == nil {
-		return false
-	}
-
-	return !trigger.shutdownRequested || !errors.Is(runErr, context.Canceled)
-}
-
-func runShutdownTasks(ctx context.Context, shutdownTasks []ShutdownTask) (bool, error) {
+func runShutdownTasks(ctx context.Context, tasks []ShutdownTask) bool {
+	logger := zerolog.Ctx(ctx)
 	failed := false
-	for _, task := range slices.Backward(shutdownTasks) {
-		if task.Run == nil {
+	for _, task := range slices.Backward(tasks) {
+		logger.Debug().Str("component", task.Name).Msg("component_shutdown_started")
+		if err := task.Run(ctx); err != nil {
+			logger.Error().Str("component", task.Name).Msg("component_shutdown_failed")
+			failed = true
+
 			continue
 		}
 
-		if err := runShutdownTask(ctx, task); err != nil {
-			if errors.Is(err, ErrShutdownTimeout) {
-				return failed, err
-			}
-			failed = true
-		}
+		logger.Debug().Str("component", task.Name).Msg("component_shutdown_completed")
 	}
 
-	return failed, nil
-}
-
-func runShutdownTask(ctx context.Context, task ShutdownTask) error {
-	name := strings.TrimSpace(task.Name)
-	if name == "" {
-		name = "unnamed"
-	}
-
-	logger := zerolog.Ctx(ctx)
-	logger.Debug().Str("component", name).Msg("component_shutdown_started")
-
-	done := make(chan error, 1)
-	go func() {
-		done <- task.Run(ctx)
-	}()
-
-	select {
-	case err := <-done:
-		if err != nil {
-			logger.Error().Str("component", name).Msg("component_shutdown_failed")
-			return ErrShutdown
-		}
-
-		logger.Debug().Str("component", name).Msg("component_shutdown_completed")
-		return nil
-
-	case <-ctx.Done():
-		logger.Error().Str("component", name).Msg("shutdown_timed_out")
-		return ErrShutdownTimeout
-	}
-}
-
-func waitForApplication(ctx context.Context, runDone <-chan error) (error, error) {
-	select {
-	case err := <-runDone:
-		return err, nil
-
-	case <-ctx.Done():
-		zerolog.Ctx(ctx).Error().Msg("shutdown_timed_out")
-		return nil, ErrShutdownTimeout
-	}
+	return failed
 }

@@ -4,28 +4,110 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/rs/zerolog"
 )
 
-func TestRunWithoutWork(t *testing.T) {
-	ctx, cancel, output := newTestContext(t)
-	cancel()
+func TestRun(t *testing.T) {
+	block := make(chan struct{})
+	t.Cleanup(func() { close(block) })
 
-	if err := run(ctx, time.Second, func() {}, nil); err != nil {
-		t.Fatalf("run() error = %v", err)
+	tests := []struct {
+		name string
+
+		giveTimeout time.Duration
+		giveRun     func(context.Context) error
+		giveTasks   []ShutdownTask
+
+		wantErr    error
+		wantOutput string
+	}{
+		{
+			name:        "no run and no tasks, context canceled -> clean shutdown",
+			giveTimeout: time.Second,
+			wantOutput:  "shutdown_completed",
+		},
+		{
+			name:        "run exits with context.Canceled after shutdown request -> not an error",
+			giveTimeout: time.Second,
+			giveRun: func(ctx context.Context) error {
+				<-ctx.Done()
+				return ctx.Err()
+			},
+			wantOutput: "shutdown_completed",
+		},
+		{
+			name:        "run fails with a secret in its error -> ErrRuntime without the secret",
+			giveTimeout: time.Second,
+			giveRun:     func(context.Context) error { return errors.New("runtime-secret-do-not-leak") },
+			wantErr:     ErrRuntime,
+			wantOutput:  "application_runtime_failed",
+		},
+		{
+			name:        "task fails with a secret in its error -> ErrShutdown without the secret",
+			giveTimeout: time.Second,
+			giveTasks: []ShutdownTask{{Name: "database", Run: func(context.Context) error {
+				return errors.New("database-secret-do-not-leak")
+			}}},
+			wantErr:    ErrShutdown,
+			wantOutput: "component_shutdown_failed",
+		},
+		{
+			name:        "task blocks past the deadline -> ErrShutdownTimeout",
+			giveTimeout: 20 * time.Millisecond,
+			giveTasks: []ShutdownTask{{Name: "blocked", Run: func(context.Context) error {
+				<-block
+				return nil
+			}}},
+			wantErr:    ErrShutdownTimeout,
+			wantOutput: "shutdown_timed_out",
+		},
+		{
+			name:        "run ignores cancellation past the deadline -> ErrShutdownTimeout",
+			giveTimeout: 20 * time.Millisecond,
+			giveRun: func(context.Context) error {
+				<-block
+				return nil
+			},
+			wantErr:    ErrShutdownTimeout,
+			wantOutput: "shutdown_timed_out",
+		},
 	}
-	if !strings.Contains(output.String(), "shutdown_started") || !strings.Contains(output.String(), "shutdown_completed") {
-		t.Errorf("lifecycle output = %q", output.String())
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel, output := newTestContext(t)
+			cancel()
+
+			started := time.Now()
+			err := Run(ctx, tt.giveTimeout, tt.giveRun, tt.giveTasks...)
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Run() error = %v, want %v", err, tt.wantErr)
+			}
+			if elapsed := time.Since(started); elapsed > tt.giveTimeout+250*time.Millisecond {
+				t.Errorf("Run() took %s, want it bounded by the %s timeout", elapsed, tt.giveTimeout)
+			}
+			if !strings.Contains(output.String(), tt.wantOutput) {
+				t.Errorf("Run() output = %q, want %q", output.String(), tt.wantOutput)
+			}
+			if strings.Contains(output.String(), "do-not-leak") || (err != nil && strings.Contains(err.Error(), "do-not-leak")) {
+				t.Errorf("secret leaked: error=%v output=%q", err, output.String())
+			}
+		})
 	}
 }
 
-func TestShutdownTasksRunInReverseOrder(t *testing.T) {
+func TestRunTasksInReverseOrder(t *testing.T) {
 	ctx, cancel, _ := newTestContext(t)
+	cancel()
+
 	order := make([]string, 0, 3)
 	task := func(name string) ShutdownTask {
 		return ShutdownTask{Name: name, Run: func(context.Context) error {
@@ -33,125 +115,48 @@ func TestShutdownTasksRunInReverseOrder(t *testing.T) {
 			return nil
 		}}
 	}
-	cancel()
 
-	err := run(ctx, time.Second, func() {}, nil, task("first"), task("second"), task("third"))
-	if err != nil {
-		t.Fatalf("run() error = %v", err)
+	if err := Run(ctx, time.Second, nil, task("first"), task("second"), task("third")); err != nil {
+		t.Fatalf("Run() error = %v", err)
 	}
 	if want := []string{"third", "second", "first"}; !reflect.DeepEqual(order, want) {
-		t.Errorf("hook order = %v, want %v", order, want)
+		t.Errorf("task order = %v, want %v", order, want)
 	}
 }
 
-func TestRunErrorsAreSafe(t *testing.T) {
-	tests := []struct {
-		name    string
-		runFn   RunFunc
-		tasks   []ShutdownTask
-		wantErr error
-	}{
-		{
-			name:    "runtime failure",
-			runFn:   func(context.Context) error { return errors.New("runtime-secret-do-not-leak") },
-			wantErr: ErrRuntime,
-		},
-		{
-			name: "shutdown failure",
-			tasks: []ShutdownTask{{Name: "database", Run: func(context.Context) error {
-				return errors.New("database-secret-do-not-leak")
-			}}},
-			wantErr: ErrShutdown,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx, cancel, output := newTestContext(t)
-			if tt.runFn == nil {
-				cancel()
-			}
-
-			err := run(ctx, time.Second, func() {}, tt.runFn, tt.tasks...)
-			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("run() error = %v, want %v", err, tt.wantErr)
-			}
-			if strings.Contains(output.String(), "do-not-leak") || strings.Contains(err.Error(), "do-not-leak") {
-				t.Fatalf("secret leaked: error=%v output=%q", err, output.String())
-			}
-		})
-	}
-}
-
-func TestRunUsesSingleShutdownTimeout(t *testing.T) {
+func TestRunStopsWhenRunReturns(t *testing.T) {
 	ctx, cancel, output := newTestContext(t)
-	block := make(chan struct{})
-	cancel()
+	defer cancel()
 
-	started := time.Now()
-	err := run(ctx, 20*time.Millisecond, func() {}, nil, ShutdownTask{
-		Name: "blocked",
-		Run: func(context.Context) error {
-			<-block
-			return nil
-		},
-	})
-	if !errors.Is(err, ErrShutdownTimeout) {
-		t.Fatalf("run() error = %v, want ErrShutdownTimeout", err)
+	if err := Run(ctx, time.Second, func(context.Context) error { return nil }); err != nil {
+		t.Fatalf("Run() error = %v", err)
 	}
-	if elapsed := time.Since(started); elapsed > 250*time.Millisecond {
-		t.Errorf("shutdown took %s, want bounded timeout", elapsed)
+	if !strings.Contains(output.String(), "shutdown_completed") {
+		t.Errorf("Run() output = %q", output.String())
 	}
-	if !strings.Contains(output.String(), "shutdown_timed_out") {
-		t.Errorf("timeout output = %q", output.String())
-	}
-	close(block)
 }
 
-func TestRunTimesOutWaitingForRunFunction(t *testing.T) {
-	ctx, cancel, _ := newTestContext(t)
-	runStarted := make(chan struct{})
-	block := make(chan struct{})
-	done := make(chan error, 1)
-	go func() {
-		done <- run(ctx, 20*time.Millisecond, func() {}, func(context.Context) error {
-			close(runStarted)
-			<-block
-			return nil
-		})
-	}()
+func TestNotifyContextCanceledBySignal(t *testing.T) {
+	ctx := NotifyContext(context.Background())
 
-	<-runStarted
-	cancel()
-	if err := <-done; !errors.Is(err, ErrShutdownTimeout) {
-		t.Fatalf("run() error = %v, want ErrShutdownTimeout", err)
+	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
+		t.Fatalf("Kill() error = %v", err)
 	}
-	close(block)
-}
 
-func TestCanceledRunFunctionCompletesNormally(t *testing.T) {
-	ctx, cancel, _ := newTestContext(t)
-	runStarted := make(chan struct{})
-	done := make(chan error, 1)
-	go func() {
-		done <- run(ctx, time.Second, func() {}, func(ctx context.Context) error {
-			close(runStarted)
-			<-ctx.Done()
-			return ctx.Err()
-		})
-	}()
-
-	<-runStarted
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatalf("run() error = %v", err)
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("NotifyContext() was not canceled by SIGTERM")
 	}
 }
 
 func newTestContext(t *testing.T) (context.Context, context.CancelFunc, *bytes.Buffer) {
 	t.Helper()
+
 	output := &bytes.Buffer{}
-	logger := zerolog.New(output).With().Timestamp().Str("service", "test").Logger()
+	// Shutdown tasks log from their own goroutine, and bytes.Buffer is not safe for concurrent writes.
+	logger := zerolog.New(zerolog.SyncWriter(output)).With().Timestamp().Str("service", "test").Logger()
 	ctx, cancel := context.WithCancel(logger.WithContext(context.Background()))
+
 	return ctx, cancel, output
 }
