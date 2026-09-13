@@ -14,7 +14,6 @@ import (
 	"github.com/pressly/goose/v3/lock"
 	"github.com/rs/zerolog"
 
-	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/internal/appctx"
 	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/internal/config"
 )
 
@@ -191,7 +190,7 @@ func TestMigrationWaitsForSessionLock(t *testing.T) {
 
 // integrationContext skips the test unless TEST_DATABASE_URL points at a
 // throwaway database, since these tests create and drop the whole schema.
-func integrationContext(t *testing.T) (appctx.Context, config.DatabaseMigrationConfig) {
+func integrationContext(t *testing.T) (context.Context, config.DatabaseMigrationConfig) {
 	t.Helper()
 
 	databaseURL := strings.TrimSpace(os.Getenv("TEST_DATABASE_URL"))
@@ -209,7 +208,7 @@ func integrationContext(t *testing.T) (appctx.Context, config.DatabaseMigrationC
 	}
 }
 
-func connectForTest(t *testing.T, ctx appctx.Context, cfg config.DatabaseMigrationConfig) *pgxpool.Pool {
+func connectForTest(t *testing.T, ctx context.Context, cfg config.DatabaseMigrationConfig) *pgxpool.Pool {
 	t.Helper()
 
 	pool, err := Connect(ctx, cfg.DatabaseConfig)
@@ -221,7 +220,7 @@ func connectForTest(t *testing.T, ctx appctx.Context, cfg config.DatabaseMigrati
 	return pool
 }
 
-func resetSchema(t *testing.T, ctx appctx.Context, pool *pgxpool.Pool) {
+func resetSchema(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 	t.Helper()
 
 	if _, err := pool.Exec(ctx, "DROP SCHEMA public CASCADE; CREATE SCHEMA public"); err != nil {
@@ -229,7 +228,7 @@ func resetSchema(t *testing.T, ctx appctx.Context, pool *pgxpool.Pool) {
 	}
 }
 
-func tableExists(t *testing.T, ctx appctx.Context, pool *pgxpool.Pool, table string) bool {
+func tableExists(t *testing.T, ctx context.Context, pool *pgxpool.Pool, table string) bool {
 	t.Helper()
 
 	var exists bool
@@ -241,19 +240,11 @@ func tableExists(t *testing.T, ctx appctx.Context, pool *pgxpool.Pool, table str
 	return exists
 }
 
-func testContext(t *testing.T) (appctx.Context, *bytes.Buffer) {
+func testContext(t *testing.T) (context.Context, *bytes.Buffer) {
 	t.Helper()
 
 	output := &bytes.Buffer{}
 	logger := zerolog.New(output).With().Timestamp().Logger()
-	ctx, err := appctx.New(context.Background(), logger, appctx.Options{
-		Environment: config.EnvironmentTest,
-		Level:       "debug",
-		Writer:      output,
-	})
-	if err != nil {
-		t.Fatalf("appctx.New() error = %v", err)
-	}
 
-	return ctx, output
+	return logger.WithContext(context.Background()), output
 }

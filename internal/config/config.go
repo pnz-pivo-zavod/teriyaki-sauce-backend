@@ -1,10 +1,14 @@
 package config
 
-import "time"
+import (
+	"time"
+
+	"github.com/rs/zerolog"
+)
 
 type CommonConfig struct {
-	Environment string `env:"APP_ENV" env-default:"development" env-description:"Application environment: development, test, or production"`
-	LogLevel    string `env:"LOG_LEVEL" env-default:"info" env-description:"Log level: trace, debug, info, warn, or error"`
+	Environment string        `env:"APP_ENV" env-default:"development" env-description:"Application environment: development, test, or production"`
+	LogLevel    zerolog.Level `env:"LOG_LEVEL" env-default:"info" env-description:"Log level: trace, debug, info, warn, or error"`
 }
 
 type DatabaseConfig struct {

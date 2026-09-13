@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/rs/zerolog"
 )
 
 var (
@@ -120,10 +122,7 @@ func validateCommon(cfg *CommonConfig) error {
 		return invalid("APP_ENV", "must be development, test, or production")
 	}
 
-	cfg.LogLevel = normalize(cfg.LogLevel)
-	switch cfg.LogLevel {
-	case "trace", "debug", "info", "warn", "error":
-	default:
+	if cfg.LogLevel < zerolog.TraceLevel || cfg.LogLevel > zerolog.ErrorLevel {
 		return invalid("LOG_LEVEL", "must be trace, debug, info, warn, or error")
 	}
 	return nil

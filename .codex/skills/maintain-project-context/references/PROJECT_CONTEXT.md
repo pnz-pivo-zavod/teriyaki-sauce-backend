@@ -61,9 +61,9 @@ cmd/api       long-running API process; owns migrations via InitDB; HTTP/router 
 cmd/worker    long-running reminder process; connects to PostgreSQL only; loop not connected yet
 cmd/migrate   one-shot goose CLI; first argument is the command, default up
 
-internal/appctx               immutable context.Context + zerolog.Logger
 internal/config               typed cleanenv configuration and validation
 internal/lifecycle            SIGINT/SIGTERM and graceful shutdown orchestration
+internal/logging              environment-specific Zerolog configuration
 internal/repository/postgres  pgxpool lifecycle and goose migration runner
 migrations                    embedded goose SQL migrations
 tools                         separate module pinning golangci-lint and Lefthook
@@ -77,11 +77,11 @@ Migration runs are serialized by a PostgreSQL session advisory lock through `goo
 
 The schema is a single initial migration covering `users`, `refresh_sessions`, `tasks`, `notes`, `tags`, and `task_tags`. `tasks` carries `user_id` ownership plus `completed`/`deleted` soft-delete flags and `notify_at`; partial indexes serve user task lists and the reminder worker. `refresh_sessions` stores SHA-256 token hashes, never raw tokens, and does not make `user_id` unique because refresh inserts the new session before deleting the old one.
 
-Application context is immutable. Each entrypoint creates a basic process logger before loading configuration, then passes it to `appctx.New` to apply the configured environment, level, and output format. Request-scoped data must be attached by deriving a new context; never mutate a process-wide context. Request ID support exists. Typed authenticated-user helpers will be added after the domain User and JWT middleware exist.
+Packages take a plain `context.Context` and read the logger with `zerolog.Ctx(ctx)`. Each entrypoint creates a basic process logger before loading configuration, applies the configured environment, level, and output format with `logging.Configure`, and attaches the result with `logger.WithContext(base)`. Request-scoped data is attached by deriving a new context. Request IDs arrive with the HTTP stage through `zerolog/hlog`; typed authenticated-user helpers wait for the domain User and JWT middleware.
 
 ## Configuration contract
 
-Common variables: `APP_ENV`, `LOG_LEVEL`, `DATABASE_URL`, `DATABASE_CONNECT_TIMEOUT`.
+Common variables: `APP_ENV`, `LOG_LEVEL`, `DATABASE_URL`, `DATABASE_CONNECT_TIMEOUT`. `LOG_LEVEL` is loaded as `zerolog.Level` (case-insensitive, no surrounding whitespace) and limited to `trace`…`error`; an unparsable value yields the sanitized `ErrInvalidConfig`, while `fatal`, `panic`, and `disabled` are rejected by name.
 
 `DATABASE_MIGRATE_TIMEOUT` belongs to the processes that migrate, so it is part of the API and migrate contracts only. The worker uses the plain `DatabaseConfig`, which makes it a compile-time error to pass worker configuration to the migration runner and keeps a broken migration timeout from stopping a process that never migrates.
 

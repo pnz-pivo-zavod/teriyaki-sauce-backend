@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
-
-	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/internal/appctx"
 )
 
 func TestRunWithoutWork(t *testing.T) {
@@ -30,7 +28,7 @@ func TestShutdownTasksRunInReverseOrder(t *testing.T) {
 	ctx, cancel, _ := newTestContext(t)
 	order := make([]string, 0, 3)
 	task := func(name string) ShutdownTask {
-		return ShutdownTask{Name: name, Run: func(appctx.Context) error {
+		return ShutdownTask{Name: name, Run: func(context.Context) error {
 			order = append(order, name)
 			return nil
 		}}
@@ -55,12 +53,12 @@ func TestRunErrorsAreSafe(t *testing.T) {
 	}{
 		{
 			name:    "runtime failure",
-			runFn:   func(appctx.Context) error { return errors.New("runtime-secret-do-not-leak") },
+			runFn:   func(context.Context) error { return errors.New("runtime-secret-do-not-leak") },
 			wantErr: ErrRuntime,
 		},
 		{
 			name: "shutdown failure",
-			tasks: []ShutdownTask{{Name: "database", Run: func(appctx.Context) error {
+			tasks: []ShutdownTask{{Name: "database", Run: func(context.Context) error {
 				return errors.New("database-secret-do-not-leak")
 			}}},
 			wantErr: ErrShutdown,
@@ -93,7 +91,7 @@ func TestRunUsesSingleShutdownTimeout(t *testing.T) {
 	started := time.Now()
 	err := run(ctx, 20*time.Millisecond, func() {}, nil, ShutdownTask{
 		Name: "blocked",
-		Run: func(appctx.Context) error {
+		Run: func(context.Context) error {
 			<-block
 			return nil
 		},
@@ -116,7 +114,7 @@ func TestRunTimesOutWaitingForRunFunction(t *testing.T) {
 	block := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 20*time.Millisecond, func() {}, func(appctx.Context) error {
+		done <- run(ctx, 20*time.Millisecond, func() {}, func(context.Context) error {
 			close(runStarted)
 			<-block
 			return nil
@@ -136,7 +134,7 @@ func TestCanceledRunFunctionCompletesNormally(t *testing.T) {
 	runStarted := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, time.Second, func() {}, func(ctx appctx.Context) error {
+		done <- run(ctx, time.Second, func() {}, func(ctx context.Context) error {
 			close(runStarted)
 			<-ctx.Done()
 			return ctx.Err()
@@ -150,15 +148,10 @@ func TestCanceledRunFunctionCompletesNormally(t *testing.T) {
 	}
 }
 
-func newTestContext(t *testing.T) (appctx.Context, context.CancelFunc, *bytes.Buffer) {
+func newTestContext(t *testing.T) (context.Context, context.CancelFunc, *bytes.Buffer) {
 	t.Helper()
-	base, cancel := context.WithCancel(context.Background())
 	output := &bytes.Buffer{}
 	logger := zerolog.New(output).With().Timestamp().Str("service", "test").Logger()
-	ctx, err := appctx.New(base, logger, appctx.Options{Environment: "test", Level: "debug", Writer: output})
-	if err != nil {
-		cancel()
-		t.Fatalf("appctx.New() error = %v", err)
-	}
+	ctx, cancel := context.WithCancel(logger.WithContext(context.Background()))
 	return ctx, cancel, output
 }

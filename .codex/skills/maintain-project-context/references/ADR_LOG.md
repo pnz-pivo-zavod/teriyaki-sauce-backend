@@ -76,7 +76,7 @@ The module requires Go 1.26.3, local and CI lint behavior is reproducible, and t
 
 ## ADR-005 — Immutable application context
 
-- Status: Accepted
+- Status: Superseded by ADR-012
 - Date: 2026-07-12
 - Related: [Zerolog context integration](https://pkg.go.dev/github.com/rs/zerolog#Logger.WithContext), [KAN-4](https://practiceilya.atlassian.net/browse/KAN-4)
 
@@ -148,7 +148,7 @@ Stage 4 will implement pool lifecycle, schema migrations, indexes, and up/down v
 
 ## ADR-009 — Entrypoint logger initialization and explicit lifecycle phases
 
-- Status: Accepted
+- Status: Accepted; `appctx.New` replaced by ADR-012
 - Date: 2026-07-12
 - Related: [zerolog](https://github.com/rs/zerolog), [KAN-4](https://practiceilya.atlassian.net/browse/KAN-4)
 - Supersedes: ADR-006, ADR-007
@@ -217,6 +217,27 @@ Tool directives move to a separate `tools/go.mod` module (`github.com/pnz-pivo-z
 
 Tool versions stay pinned and reproducible locally and in CI, and the application module graph shrinks to runtime and test dependencies. Commands get longer, tool upgrades run `go get -tool` inside `tools/`, and existing clones must rerun `lefthook install` so the git hook calls the new command.
 
+## ADR-012 — Plain context.Context with Zerolog instead of appctx
+
+- Status: Accepted
+- Date: 2026-09-13
+- Related: [Zerolog context integration](https://pkg.go.dev/github.com/rs/zerolog#Ctx), ADR-005, ADR-009
+- Supersedes: ADR-005
+
+### Context
+
+`internal/appctx.Context` embedded `context.Context` next to a private logger and duplicated what Zerolog already provides with `logger.WithContext` and `zerolog.Ctx`: the logger was stored twice, `FromContext` and `WithContext` rewrapped the standard context, `WithRequestID` was used only by tests, and `appctx.New` revalidated `APP_ENV` and `LOG_LEVEL` that configuration had already validated. The custom type also forced six `//nolint:contextcheck` directives in the entrypoints.
+
+### Decision
+
+Packages accept a plain `context.Context` and log through `zerolog.Ctx(ctx)`. `internal/logging.Configure` applies the validated common configuration to the entrypoint logger: console output without ANSI colors in development, JSON in test and production, and an `environment` field next to `service`. Entrypoints attach it with `logger.WithContext(base)`. `internal/appctx` is removed.
+
+`LOG_LEVEL` is loaded by cleanenv directly as `zerolog.Level` through `encoding.TextUnmarshaler`. The accepted range stays `trace` through `error`; `fatal`, `panic`, and `disabled` are rejected because they would silence operational error logs. Request IDs are deferred to the HTTP stage, which will use `zerolog/hlog`.
+
+### Consequences
+
+Immutability is kept for free because `context.Context` is immutable, and no `nolint` directives remain. Log format and secret-handling rules are unchanged. `LOG_LEVEL` no longer tolerates surrounding whitespace, and an unparsable value reports the sanitized `ErrInvalidConfig` instead of naming the field, matching other typed fields such as durations.
+
 ## Project change log
 
 ### 2026-07-11
@@ -255,3 +276,4 @@ Tool versions stay pinned and reproducible locally and in CI, and the applicatio
 - REF-07 removed placeholder `.gitkeep` directories (`api`, `internal/auth`, `domain`, `reminder`, `service`, `telegram`, `transport/http`) and `.dockerignore`; each returns with the stage that adds code or a Dockerfile (stage 17).
 - REF-07 removed `TESTING_PLAN.md`; stage test plans now live in pull request descriptions.
 - REF-07 cut the README down to a quickstart that links to the project context instead of restating it, marked stage 04 as done, and marked ADR-006 and ADR-007 as superseded by ADR-009.
+- REF-02 replaced `internal/appctx` with plain `context.Context` plus `zerolog.Ctx` and a small `internal/logging.Configure` (ADR-012, superseding ADR-005), loaded `LOG_LEVEL` as `zerolog.Level`, and removed all six `//nolint:contextcheck` directives.

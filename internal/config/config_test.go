@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
 )
 
 const (
@@ -47,7 +49,7 @@ func TestLoadAPIFromEnvironment(t *testing.T) {
 	cleanEnvironment(t)
 	setValidAPIEnvironment(t)
 	t.Setenv("APP_ENV", " TEST ")
-	t.Setenv("LOG_LEVEL", " DEBUG ")
+	t.Setenv("LOG_LEVEL", "DEBUG")
 	t.Setenv("CORS_ALLOWED_ORIGINS", "https://one.example.test, https://two.example.test,https://one.example.test")
 
 	cfg, err := LoadAPI()
@@ -58,8 +60,8 @@ func TestLoadAPIFromEnvironment(t *testing.T) {
 	if cfg.Common.Environment != EnvironmentTest {
 		t.Errorf("Environment = %q, want %q", cfg.Common.Environment, EnvironmentTest)
 	}
-	if cfg.Common.LogLevel != "debug" {
-		t.Errorf("LogLevel = %q, want debug", cfg.Common.LogLevel)
+	if cfg.Common.LogLevel != zerolog.DebugLevel {
+		t.Errorf("LogLevel = %s, want debug", cfg.Common.LogLevel)
 	}
 	if cfg.HTTP.Address != ":8080" {
 		t.Errorf("HTTP address = %q, want :8080", cfg.HTTP.Address)
@@ -224,7 +226,7 @@ func TestLoadMigrateRequiresOnlyDatabaseAndCommonConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadMigrate() error = %v", err)
 	}
-	if cfg.Common.Environment != EnvironmentDevelopment || cfg.Common.LogLevel != "info" {
+	if cfg.Common.Environment != EnvironmentDevelopment || cfg.Common.LogLevel != zerolog.InfoLevel {
 		t.Errorf("common defaults = %#v, want development/info", cfg.Common)
 	}
 }
@@ -254,7 +256,7 @@ func TestConfigFileOverridesProcessEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadMigrate() error = %v", err)
 	}
-	if cfg.Common.Environment != EnvironmentTest || cfg.Common.LogLevel != "error" {
+	if cfg.Common.Environment != EnvironmentTest || cfg.Common.LogLevel != zerolog.ErrorLevel {
 		t.Errorf("file common config = %#v, want test/error", cfg.Common)
 	}
 	if cfg.Database.URL != testDatabaseURL {
@@ -291,7 +293,7 @@ func TestLoadAPIValidation(t *testing.T) {
 		field  string
 	}{
 		{name: "environment", mutate: func(t *testing.T) { t.Setenv("APP_ENV", "staging") }, field: "APP_ENV"},
-		{name: "log level", mutate: func(t *testing.T) { t.Setenv("LOG_LEVEL", "verbose") }, field: "LOG_LEVEL"},
+		{name: "log level", mutate: func(t *testing.T) { t.Setenv("LOG_LEVEL", "fatal") }, field: "LOG_LEVEL"},
 		{name: "database scheme", mutate: func(t *testing.T) { t.Setenv("DATABASE_URL", "mysql://localhost/db") }, field: "DATABASE_URL"},
 		{name: "database name", mutate: func(t *testing.T) { t.Setenv("DATABASE_URL", "postgres://localhost") }, field: "DATABASE_URL"},
 		{name: "HTTP address", mutate: func(t *testing.T) { t.Setenv("HTTP_ADDR", "8080") }, field: "HTTP_ADDR"},
@@ -472,6 +474,17 @@ func TestCleanenvErrorsAreSanitized(t *testing.T) {
 	}
 	if err.Error() != ErrInvalidConfig.Error() {
 		t.Fatalf("error = %q, want sanitized error", err)
+	}
+}
+
+func TestUnknownLogLevelIsSanitized(t *testing.T) {
+	cleanEnvironment(t)
+	t.Setenv("DATABASE_URL", testDatabaseURL)
+	t.Setenv("LOG_LEVEL", "verbose")
+
+	_, err := LoadMigrate()
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("error = %v, want ErrInvalidConfig", err)
 	}
 }
 

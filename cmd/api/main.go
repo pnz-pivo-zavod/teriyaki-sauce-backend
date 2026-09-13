@@ -7,9 +7,9 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/internal/appctx"
 	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/internal/config"
 	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/internal/lifecycle"
+	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/internal/logging"
 	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/internal/repository/postgres"
 )
 
@@ -27,33 +27,24 @@ func run(base context.Context, output io.Writer) int {
 		return 1
 	}
 
-	application, err := appctx.New(base, logger, appctx.Options{
-		Environment: cfg.Common.Environment,
-		Level:       cfg.Common.LogLevel,
-		Writer:      output,
-	})
+	logger = logging.Configure(logger, output, cfg.Common)
+	ctx := logger.WithContext(base)
+
+	pool, err := postgres.InitDB(ctx, cfg.Database)
 	if err != nil {
-		logger.Error().Msg("logger_initialization_failed")
+		logger.Error().Msg("database_initialization_failed")
 		return 1
 	}
 
-	//nolint:contextcheck // application already contains the base context passed to run.
-	pool, err := postgres.InitDB(application, cfg.Database)
-	if err != nil {
-		application.Logger().Error().Msg("database_initialization_failed")
-		return 1
-	}
-
-	application.Logger().Info().Msg("application_started")
-	//nolint:contextcheck // application already contains the base context passed to run.
-	if err := lifecycle.Run(application, cfg.Lifecycle.ShutdownTimeout, nil, lifecycle.ShutdownTask{
+	logger.Info().Msg("application_started")
+	if err := lifecycle.Run(ctx, cfg.Lifecycle.ShutdownTimeout, nil, lifecycle.ShutdownTask{
 		Name: "postgres",
-		Run: func(appctx.Context) error {
+		Run: func(context.Context) error {
 			pool.Close()
 			return nil
 		},
 	}); err != nil {
-		application.Logger().Error().Msg("application_lifecycle_failed")
+		logger.Error().Msg("application_lifecycle_failed")
 		return 1
 	}
 

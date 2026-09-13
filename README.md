@@ -18,9 +18,9 @@ Backend для персонального task tracker, работающего �
 │   ├── migrate/                 # CLI миграций
 │   └── worker/                  # Worker напоминаний
 ├── internal/
-│   ├── appctx/                  # Application context и Zerolog
 │   ├── config/                  # Загрузка конфигурации через cleanenv
 │   ├── lifecycle/               # Signals и graceful shutdown
+│   ├── logging/                 # Настройка Zerolog по окружению
 │   └── repository/postgres/     # PostgreSQL и миграции
 ├── migrations/                  # SQL-миграции goose
 └── tools/                       # go.mod с golangci-lint и Lefthook

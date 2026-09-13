@@ -12,7 +12,6 @@ import (
 	"github.com/pressly/goose/v3/lock"
 	"github.com/rs/zerolog"
 
-	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/internal/appctx"
 	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/internal/config"
 	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/migrations"
 )
@@ -40,7 +39,7 @@ func SupportedCommand(command string) bool {
 	}
 }
 
-func InitDB(ctx appctx.Context, cfg config.DatabaseMigrationConfig) (*pgxpool.Pool, error) {
+func InitDB(ctx context.Context, cfg config.DatabaseMigrationConfig) (*pgxpool.Pool, error) {
 	pool, err := Connect(ctx, cfg.DatabaseConfig)
 	if err != nil {
 		return nil, err
@@ -54,7 +53,7 @@ func InitDB(ctx appctx.Context, cfg config.DatabaseMigrationConfig) (*pgxpool.Po
 	return pool, nil
 }
 
-func Connect(ctx appctx.Context, cfg config.DatabaseConfig) (*pgxpool.Pool, error) {
+func Connect(ctx context.Context, cfg config.DatabaseConfig) (*pgxpool.Pool, error) {
 	connectContext, cancel := context.WithTimeout(ctx, cfg.ConnectTimeout)
 	defer cancel()
 
@@ -68,12 +67,12 @@ func Connect(ctx appctx.Context, cfg config.DatabaseConfig) (*pgxpool.Pool, erro
 		return nil, ErrConnect
 	}
 
-	ctx.Logger().Info().Msg("postgres_connected")
+	zerolog.Ctx(ctx).Info().Msg("postgres_connected")
 	return pool, nil
 }
 
-func Migrate(ctx appctx.Context, pool *pgxpool.Pool, cfg config.DatabaseMigrationConfig, command string) error {
-	logger := ctx.Logger()
+func Migrate(ctx context.Context, pool *pgxpool.Pool, cfg config.DatabaseMigrationConfig, command string) error {
+	logger := zerolog.Ctx(ctx)
 
 	migrateContext, cancel := context.WithTimeout(ctx, cfg.MigrateTimeout)
 	defer cancel()
