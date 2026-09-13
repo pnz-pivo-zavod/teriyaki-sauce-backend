@@ -85,21 +85,30 @@ Common variables: `APP_ENV`, `LOG_LEVEL`, `DATABASE_URL`, `DATABASE_CONNECT_TIME
 
 `DATABASE_MIGRATE_TIMEOUT` belongs to the processes that migrate, so it is part of the API and migrate contracts only. The worker uses the plain `DatabaseConfig`, which makes it a compile-time error to pass worker configuration to the migration runner and keeps a broken migration timeout from stopping a process that never migrates.
 
-API additionally reads HTTP, Telegram update/webhook, JWT, CORS, cookie, and `SHUTDOWN_TIMEOUT` settings. Worker additionally reads Telegram sender, reminder, and `SHUTDOWN_TIMEOUT` settings. Migrate reads only common and PostgreSQL settings.
+API and worker additionally read `SHUTDOWN_TIMEOUT`. Migrate reads only common and PostgreSQL settings. `api` and `worker` start with nothing but `DATABASE_URL`.
+
+Configuration fields are added in the stage that introduces their consumer, in native types where possible (for example `http.SameSite`, `[]*url.URL`), not as unused strings validated ahead of time. The process split into `APIConfig`, `WorkerConfig`, and `MigrateConfig` stays.
 
 Important defaults:
 
 - `APP_ENV=development`
 - `LOG_LEVEL=info`
-- `HTTP_ADDR=:8080`
-- `TELEGRAM_UPDATE_MODE=polling`; production requires webhook
 - `SHUTDOWN_TIMEOUT=10s`
 - `DATABASE_CONNECT_TIMEOUT=15s`
 - `DATABASE_MIGRATE_TIMEOUT=3m`; a migration that needs longer should be applied by hand
-- `REMINDER_POLL_INTERVAL=10s`
-- `REMINDER_LEASE_TIMEOUT=1m`
-- `REMINDER_BATCH_SIZE=50`
-- `REMINDER_MAX_ATTEMPTS=4`
+
+### Requirements for fields of future stages
+
+These fields were loaded and validated before any consumer existed and were removed in REF-01…09 refactoring (2026-09-13). The stage that adds a consumer restores the field with these rules.
+
+| Stage | Process | Variables and rules |
+|---|---|---|
+| 06 — Telegram initData validation ([KAN-6](https://practiceilya.atlassian.net/browse/KAN-6)) | api | `TELEGRAM_BOT_TOKEN` required, non-empty, secret (never logged). |
+| 07 — Users and tokens ([KAN-7](https://practiceilya.atlassian.net/browse/KAN-7)) | api | `JWT_ACCESS_SECRET` required, at least 32 bytes, secret. `JWT_ISSUER` default `tg-task-tracker`, `JWT_AUDIENCE` default `tg-mini-app`, both non-empty. |
+| 08 — HTTP authentication ([KAN-8](https://practiceilya.atlassian.net/browse/KAN-8)) | api | Refresh cookie: `COOKIE_SAME_SITE` one of `lax` (default), `strict`, `none`; `COOKIE_SECURE` default `false`, must be `true` when SameSite is `none` and always in production; optional `COOKIE_DOMAIN` is a bare hostname (optional leading dot) without scheme, path, or port. |
+| 13 — Router, middleware, health checks ([KAN-15](https://practiceilya.atlassian.net/browse/KAN-15)) | api | `HTTP_ADDR` default `:8080`, valid `host:port` with port 1–65535. `CORS_ALLOWED_ORIGINS` required, comma-separated, each an `http`/`https` origin without path, query, fragment, or credentials, only `https` in production, duplicates removed. |
+| 14 — Telegram bot ([KAN-18](https://practiceilya.atlassian.net/browse/KAN-18)) | api | `TELEGRAM_UPDATE_MODE` `polling` (default) or `webhook`, must be `webhook` in production. For webhook: `TELEGRAM_WEBHOOK_URL` absolute HTTPS URL without credentials or fragment; `TELEGRAM_WEBHOOK_SECRET` 1–256 of `A-Z a-z 0-9 _ -`, secret. `MINI_APP_URL` required absolute HTTPS URL without credentials or fragment. |
+| 15 — Reminders ([KAN-14](https://practiceilya.atlassian.net/browse/KAN-14)) | worker | `TELEGRAM_BOT_TOKEN` and `MINI_APP_URL` with the rules above. `REMINDER_POLL_INTERVAL` default `10s`, > 0; `REMINDER_LEASE_TIMEOUT` default `1m`, greater than the poll interval; `REMINDER_BATCH_SIZE` default 50, 1–500; `REMINDER_MAX_ATTEMPTS` default 4, 1–10. |
 
 Use `.env.example` as the complete safe variable inventory. Do not duplicate secret values here.
 

@@ -18,9 +18,7 @@ func TestRun(t *testing.T) {
 		if !strings.Contains(output.String(), "database_initialization_failed") {
 			t.Errorf("run() output = %q", output.String())
 		}
-		if strings.Contains(output.String(), "api-token-do-not-leak") ||
-			strings.Contains(output.String(), "jwt-secret-do-not-leak") ||
-			strings.Contains(output.String(), "api-dsn-do-not-leak") {
+		if strings.Contains(output.String(), "api-dsn-do-not-leak") {
 			t.Fatalf("run() leaked a secret: %q", output.String())
 		}
 	})
@@ -45,8 +43,4 @@ func setValidEnvironment(t *testing.T) {
 	// Port 1 refuses immediately, so the entry point fails without waiting.
 	t.Setenv("DATABASE_URL", "postgres://user:api-dsn-do-not-leak@127.0.0.1:1/test")
 	t.Setenv("DATABASE_CONNECT_TIMEOUT", "1s")
-	t.Setenv("TELEGRAM_BOT_TOKEN", "api-token-do-not-leak")
-	t.Setenv("MINI_APP_URL", "https://mini.example.test")
-	t.Setenv("JWT_ACCESS_SECRET", "jwt-secret-do-not-leak-000000000")
-	t.Setenv("CORS_ALLOWED_ORIGINS", "https://mini.example.test")
 }

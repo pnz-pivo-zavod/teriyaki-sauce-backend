@@ -22,7 +22,7 @@ API, background processing, and migration concerns are separately deployable whi
 
 ## ADR-002 — Process-specific typed configuration
 
-- Status: Accepted
+- Status: Accepted; configuration scope superseded by ADR-013
 - Date: 2026-07-11
 - Related: [cleanenv](https://github.com/ilyakaznacheev/cleanenv), [KAN-5](https://practiceilya.atlassian.net/browse/KAN-5)
 
@@ -238,6 +238,25 @@ Packages accept a plain `context.Context` and log through `zerolog.Ctx(ctx)`. `i
 
 Immutability is kept for free because `context.Context` is immutable, and no `nolint` directives remain. Log format and secret-handling rules are unchanged. `LOG_LEVEL` no longer tolerates surrounding whitespace, and an unparsable value reports the sanitized `ErrInvalidConfig` instead of naming the field, matching other typed fields such as durations.
 
+## ADR-013 — Configuration fields arrive with their consumers
+
+- Status: Accepted
+- Date: 2026-09-13
+- Related: ADR-002, [KAN-5](https://practiceilya.atlassian.net/browse/KAN-5)
+- Supersedes: ADR-002 (configuration scope only)
+
+### Context
+
+Stage 2 loaded and strictly validated HTTP, Telegram, JWT, CORS, cookie, and reminder settings that no binary used yet. About 520 lines of structs, regular expressions, validation, and tests carried no behavior, and `api` refused to start without `TELEGRAM_BOT_TOKEN`, `JWT_ACCESS_SECRET`, `MINI_APP_URL`, and `CORS_ALLOWED_ORIGINS` it never read, which added secret surface and local friction.
+
+### Decision
+
+Keep only configuration with a consumer: common settings, PostgreSQL, and `SHUTDOWN_TIMEOUT`. Each future field is added in the stage that uses it, in a native type where possible. The rules of the removed fields are recorded per stage in `PROJECT_CONTEXT.md` so the contract is not lost. The process split, cleanenv loading, the production ban on `CONFIG_FILE`, and sanitized errors from ADR-002 stay in force.
+
+### Consequences
+
+`api` and `worker` start with only `DATABASE_URL`. Stages 06, 07, 08, 13, 14, and 15 must restore their fields with the recorded rules and tests; until then the requirements live in the project context rather than in code.
+
 ## Project change log
 
 ### 2026-07-11
@@ -280,3 +299,5 @@ Immutability is kept for free because `context.Context` is immutable, and no `no
 - REF-03 reduced `internal/lifecycle` to one public `Run(ctx, timeout, run, tasks...)` plus `NotifyContext`: removed the test-only `run` seam, the `RunFunc`/`ShutdownFunc`/`triggerResult` types, the `timeout <= 0` branch, the `unnamed` task fallback, and skipping nil tasks, and runs all shutdown tasks in one goroutine. ADR-009 invariants are unchanged: reverse task order, one shared deadline, sentinel errors, `context.Canceled` after a signal is not an error, a repeated signal terminates.
 - REF-03 moved signal context creation into api and worker before database initialization, so SIGTERM during the migration lock wait exits promptly (closes an open consequence of ADR-010).
 - REF-03 rewrote lifecycle tests as a table through the public `Run` in `give*`/`want*` form and added a SIGTERM test for `NotifyContext`.
+- REF-04 removed unused HTTP, Telegram, JWT, CORS, cookie, and reminder configuration with its validation and tests, merged `consts.go` into `config.go`, and trimmed `.env.example` and entrypoint test environments (ADR-013, partially superseding ADR-002). Rules of the removed fields moved to the per-stage table in `PROJECT_CONTEXT.md`.
+- REF-04 rewrote configuration tests in `give*`/`want*` table form with self-describing case names and replaced manual environment restore with `t.Setenv` plus `os.Unsetenv`.
