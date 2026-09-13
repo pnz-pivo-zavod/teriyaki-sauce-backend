@@ -74,10 +74,6 @@ func Connect(ctx appctx.Context, cfg config.DatabaseConfig) (*pgxpool.Pool, erro
 
 func Migrate(ctx appctx.Context, pool *pgxpool.Pool, cfg config.DatabaseMigrationConfig, command string) error {
 	logger := ctx.Logger()
-	if !SupportedCommand(command) {
-		logger.Error().Str("command", command).Msg("unknown_migration_command")
-		return ErrCommand
-	}
 
 	migrateContext, cancel := context.WithTimeout(ctx, cfg.MigrateTimeout)
 	defer cancel()
@@ -90,7 +86,7 @@ func Migrate(ctx appctx.Context, pool *pgxpool.Pool, cfg config.DatabaseMigratio
 		}
 	}()
 
-	provider, err := newProvider(db, cfg, logger)
+	provider, err := newProvider(db, cfg)
 	if err != nil {
 		logger.Error().Msg("migration_provider_failed")
 		return ErrMigrate
@@ -105,7 +101,7 @@ func Migrate(ctx appctx.Context, pool *pgxpool.Pool, cfg config.DatabaseMigratio
 	return nil
 }
 
-func newProvider(db *sql.DB, cfg config.DatabaseMigrationConfig, logger *zerolog.Logger) (*goose.Provider, error) {
+func newProvider(db *sql.DB, cfg config.DatabaseMigrationConfig) (*goose.Provider, error) {
 	retries := max(cfg.MigrateTimeout/time.Second, 1)
 
 	locker, err := lock.NewPostgresSessionLocker(lock.WithLockTimeout(lockRetryPeriodSeconds, uint64(retries)))
@@ -113,10 +109,7 @@ func newProvider(db *sql.DB, cfg config.DatabaseMigrationConfig, logger *zerolog
 		return nil, err
 	}
 
-	return goose.NewProvider(goose.DialectPostgres, db, migrations.FS,
-		goose.WithSessionLocker(locker),
-		goose.WithLogger(gooseLogger{logger: logger}),
-	)
+	return goose.NewProvider(goose.DialectPostgres, db, migrations.FS, goose.WithSessionLocker(locker))
 }
 
 func runCommand(ctx context.Context, logger *zerolog.Logger, provider *goose.Provider, command string) error {

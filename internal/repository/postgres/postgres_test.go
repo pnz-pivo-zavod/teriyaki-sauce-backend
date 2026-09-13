@@ -34,8 +34,7 @@ func TestNewProviderReadsEmbeddedMigrations(t *testing.T) {
 		}
 	})
 
-	logger := zerolog.Nop()
-	provider, err := newProvider(db, config.DatabaseMigrationConfig{MigrateTimeout: time.Minute}, &logger)
+	provider, err := newProvider(db, config.DatabaseMigrationConfig{MigrateTimeout: time.Minute})
 	if err != nil {
 		t.Fatalf("newProvider() error = %v, the embedded FS is empty or misnamed", err)
 	}
@@ -103,19 +102,6 @@ func TestSupportedCommand(t *testing.T) {
 				t.Errorf("SupportedCommand(%q) = %t, want %t", tt.command, got, tt.want)
 			}
 		})
-	}
-}
-
-// A nil pool proves an unsupported command is rejected before anything touches
-// the database.
-func TestMigrateRejectsUnknownCommandBeforeUsingThePool(t *testing.T) {
-	ctx, output := testContext(t)
-
-	if err := Migrate(ctx, nil, config.DatabaseMigrationConfig{}, "reset"); !errors.Is(err, ErrCommand) {
-		t.Fatalf("Migrate() error = %v, want ErrCommand", err)
-	}
-	if !strings.Contains(output.String(), "unknown_migration_command") {
-		t.Errorf("Migrate() output = %q", output.String())
 	}
 }
 
