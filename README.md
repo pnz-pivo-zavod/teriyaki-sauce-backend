@@ -136,7 +136,6 @@ SHUTDOWN_TIMEOUT=10s
 Lefthook запускает проверки для staged Go-файлов при каждом `git commit`:
 
 - форматирование через formatters из `.golangci.yml` с автоматическим добавлением исправлений в index;
-- `go vet ./...`;
 - полный `golangci-lint run` с настройками проекта.
 
 Lefthook и golangci-lint зафиксированы как Go tools в `go.mod`. После клонирования репозитория установите hook:

@@ -117,8 +117,8 @@ Use `.env.example` as the complete safe variable inventory. Do not duplicate sec
 ## Quality gates
 
 - `.golangci.yml` is the shared strict lint configuration.
-- Pull requests run golangci-lint through GitHub Actions.
-- Lefthook pre-commit runs formatting, `go vet`, and full linting.
+- Pull requests run `go build ./cmd/...`, `go test -race ./...`, and `go tool golangci-lint run` through GitHub Actions; the linter version comes from `go.mod` only.
+- Lefthook pre-commit runs formatting and full linting (`govet` runs inside golangci-lint).
 - Required acceptance for implementation stages: `go test ./...`, `go test -race ./...`, `go build ./cmd/...`, golangci-lint, and relevant smoke/integration tests.
 - New test-heavy stages maintain `TESTING_PLAN.md` when the testing skill requires it.
 

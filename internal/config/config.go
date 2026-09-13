@@ -17,7 +17,7 @@ type DatabaseConfig struct {
 // timeout cannot stop a process that never migrates.
 type DatabaseMigrationConfig struct {
 	DatabaseConfig
-	MigrateTimeout time.Duration `env:"DATABASE_MIGRATE_TIMEOUT" env-default:"3m" env-description:"Maximum duration of a single migration run, including the wait for the migration lock"`
+	MigrateTimeout time.Duration `env:"DATABASE_MIGRATE_TIMEOUT" env-default:"3m" env-description:"Maximum duration of a migration run, including the lock wait"`
 }
 
 type TelegramSenderConfig struct {

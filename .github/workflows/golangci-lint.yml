@@ -18,7 +18,7 @@ permissions:
 jobs:
   lint:
     if: github.event.pull_request.draft == false
-    name: Lint Go code
+    name: Build, test and lint Go code
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -34,10 +34,11 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Build
+        run: go build ./cmd/...
+
+      - name: Test
+        run: go test -race ./...
+
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.12.2
-          install-mode: goinstall
-          args: --config=.golangci.yml
-          cache-invalidation-interval: 7
+        run: go tool golangci-lint run --config=.golangci.yml

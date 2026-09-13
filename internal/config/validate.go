@@ -204,7 +204,8 @@ func validateCORS(cfg *CORSConfig, environment string) error {
 	for _, raw := range cfg.AllowedOrigins {
 		origin := strings.TrimSpace(raw)
 		parsed, err := url.Parse(origin)
-		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") ||
+			parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
 			return invalid("CORS_ALLOWED_ORIGINS", "must contain valid HTTP origins without paths, credentials, queries, or fragments")
 		}
 		if environment == EnvironmentProduction && parsed.Scheme != "https" {

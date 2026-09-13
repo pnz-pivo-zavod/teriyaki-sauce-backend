@@ -231,3 +231,5 @@ Stage 7 must hash tokens before storing or comparing them.
 
 - REF-01 removed the goose logger adapter: it was a no-op, since goose v3 `Provider` logs only with `WithVerbose`, which is not enabled. Clarified ADR-010 accordingly.
 - REF-01 removed the duplicate command check at the start of `postgres.Migrate`; the allowlist gate before connecting stays in `cmd/migrate`, and `Migrate` keeps its `default` branch returning `ErrCommand`.
+- REF-05 removed the duplicate `go vet` pre-commit job, trimmed `.golangci.yml` to `gocognit` + `funlen` for complexity, `gci` + `gofumpt` for formatting, dropped no-op `testifylint`/`testableexamples` and default-repeating `run`/`output` settings, and lowered `lll` to 180.
+- REF-05 made the pull request workflow build and run `go test -race ./...` before linting, and run golangci-lint through `go tool` so its version is pinned only in `go.mod`.
