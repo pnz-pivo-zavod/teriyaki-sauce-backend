@@ -18,7 +18,7 @@ import (
 )
 
 // Every table the initial schema must create.
-var schemaTables = []string{"users", "refresh_sessions", "tasks", "notes", "tags", "task_tags"}
+var _schemaTables = []string{"users", "refresh_sessions", "tasks", "notes", "tags", "task_tags"}
 
 func TestNewProviderReadsEmbeddedMigrations(t *testing.T) {
 	// sql.Open is lazy, so the provider collects the embedded migrations
@@ -113,7 +113,7 @@ func TestMigrationCycle(t *testing.T) {
 	if err := Migrate(ctx, pool, cfg, CommandUp); err != nil {
 		t.Fatalf("Migrate(up) error = %v", err)
 	}
-	for _, table := range schemaTables {
+	for _, table := range _schemaTables {
 		if !tableExists(t, ctx, pool, table) {
 			t.Errorf("table %q is missing after up", table)
 		}
@@ -126,7 +126,7 @@ func TestMigrationCycle(t *testing.T) {
 	if err := Migrate(ctx, pool, cfg, CommandDown); err != nil {
 		t.Fatalf("Migrate(down) error = %v", err)
 	}
-	for _, table := range schemaTables {
+	for _, table := range _schemaTables {
 		if tableExists(t, ctx, pool, table) {
 			t.Errorf("table %q still exists after down", table)
 		}
@@ -135,7 +135,7 @@ func TestMigrationCycle(t *testing.T) {
 	if err := Migrate(ctx, pool, cfg, CommandUp); err != nil {
 		t.Fatalf("Migrate(up) after down error = %v", err)
 	}
-	for _, table := range schemaTables {
+	for _, table := range _schemaTables {
 		if !tableExists(t, ctx, pool, table) {
 			t.Errorf("table %q is missing after the second up", table)
 		}
@@ -167,7 +167,7 @@ func TestMigrationWaitsForSessionLock(t *testing.T) {
 		holder.Release()
 		t.Fatalf("Migrate(up) error = %v, want ErrMigrate while the advisory lock is held", err)
 	}
-	for _, table := range schemaTables {
+	for _, table := range _schemaTables {
 		if tableExists(t, ctx, pool, table) {
 			t.Errorf("table %q was created while the advisory lock was held", table)
 		}
@@ -181,7 +181,7 @@ func TestMigrationWaitsForSessionLock(t *testing.T) {
 	if err := Migrate(ctx, pool, cfg, CommandUp); err != nil {
 		t.Fatalf("Migrate(up) after the lock was released error = %v", err)
 	}
-	for _, table := range schemaTables {
+	for _, table := range _schemaTables {
 		if !tableExists(t, ctx, pool, table) {
 			t.Errorf("table %q is missing after the lock was released", table)
 		}
@@ -208,7 +208,11 @@ func integrationContext(t *testing.T) (context.Context, config.DatabaseMigration
 	}
 }
 
-func connectForTest(t *testing.T, ctx context.Context, cfg config.DatabaseMigrationConfig) *pgxpool.Pool {
+func connectForTest(
+	t *testing.T,
+	ctx context.Context,
+	cfg config.DatabaseMigrationConfig,
+) *pgxpool.Pool {
 	t.Helper()
 
 	pool, err := Connect(ctx, cfg.DatabaseConfig)
@@ -232,7 +236,9 @@ func tableExists(t *testing.T, ctx context.Context, pool *pgxpool.Pool, table st
 	t.Helper()
 
 	var exists bool
-	query := "SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = current_schema() AND tablename = $1)"
+	query := `SELECT EXISTS (
+		SELECT 1 FROM pg_tables WHERE schemaname = current_schema() AND tablename = $1
+	)`
 	if err := pool.QueryRow(ctx, query, table).Scan(&exists); err != nil {
 		t.Fatalf("QueryRow(%q) error = %v", table, err)
 	}

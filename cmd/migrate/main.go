@@ -12,14 +12,14 @@ import (
 	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/internal/repository/postgres"
 )
 
-const serviceName = "migrate"
+const _serviceName = "migrate"
 
 func main() {
 	os.Exit(run(context.Background(), os.Stderr, os.Args[1:]))
 }
 
 func run(base context.Context, output io.Writer, args []string) int {
-	logger := zerolog.New(output).With().Timestamp().Str("service", serviceName).Logger()
+	logger := zerolog.New(output).With().Timestamp().Str("service", _serviceName).Logger()
 	cfg, err := config.LoadMigrate()
 	if err != nil {
 		logger.Error().Msg("invalid_or_missing_configuration")
@@ -33,6 +33,7 @@ func run(base context.Context, output io.Writer, args []string) int {
 	if len(args) > 0 {
 		command = args[0]
 	}
+
 	if !postgres.SupportedCommand(command) {
 		logger.Error().Str("command", command).Msg("unknown_migration_command")
 		return 1

@@ -97,7 +97,8 @@ func TestRun(t *testing.T) {
 			if !strings.Contains(output.String(), tt.wantOutput) {
 				t.Errorf("Run() output = %q, want %q", output.String(), tt.wantOutput)
 			}
-			if strings.Contains(output.String(), "do-not-leak") || (err != nil && strings.Contains(err.Error(), "do-not-leak")) {
+			leakedInError := err != nil && strings.Contains(err.Error(), "do-not-leak")
+			if leakedInError || strings.Contains(output.String(), "do-not-leak") {
 				t.Errorf("secret leaked: error=%v output=%q", err, output.String())
 			}
 		})
@@ -154,8 +155,9 @@ func newTestContext(t *testing.T) (context.Context, context.CancelFunc, *bytes.B
 	t.Helper()
 
 	output := &bytes.Buffer{}
-	// Shutdown tasks log from their own goroutine, and bytes.Buffer is not safe for concurrent writes.
-	logger := zerolog.New(zerolog.SyncWriter(output)).With().Timestamp().Str("service", "test").Logger()
+	// Shutdown tasks log from their own goroutine; bytes.Buffer is not safe for concurrent writes.
+	writer := zerolog.SyncWriter(output)
+	logger := zerolog.New(writer).With().Timestamp().Str("service", "test").Logger()
 	ctx, cancel := context.WithCancel(logger.WithContext(context.Background()))
 
 	return ctx, cancel, output

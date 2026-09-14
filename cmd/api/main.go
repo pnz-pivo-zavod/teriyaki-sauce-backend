@@ -13,14 +13,14 @@ import (
 	"github.com/pnz-pivo-zavod/teriyaki-sauce-backend/internal/repository/postgres"
 )
 
-const serviceName = "api"
+const _serviceName = "api"
 
 func main() {
 	os.Exit(run(context.Background(), os.Stderr))
 }
 
 func run(base context.Context, output io.Writer) int {
-	logger := zerolog.New(output).With().Timestamp().Str("service", serviceName).Logger()
+	logger := zerolog.New(output).With().Timestamp().Str("service", _serviceName).Logger()
 	cfg, err := config.LoadAPI()
 	if err != nil {
 		logger.Error().Msg("invalid_or_missing_configuration")

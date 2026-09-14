@@ -11,9 +11,9 @@ import (
 	"github.com/rs/zerolog"
 )
 
-const testDatabaseURL = "postgres://user:password@localhost:5432/teriyaki_sauce?sslmode=disable"
+const _testDatabaseURL = "postgres://user:password@localhost:5432/teriyaki_sauce?sslmode=disable"
 
-var configEnvironmentNames = []string{
+var _configEnvironmentNames = []string{
 	"CONFIG_FILE",
 	"APP_ENV",
 	"LOG_LEVEL",
@@ -25,31 +25,34 @@ var configEnvironmentNames = []string{
 
 func TestLoadDefaults(t *testing.T) {
 	cleanEnvironment(t)
-	t.Setenv("DATABASE_URL", testDatabaseURL)
+	t.Setenv("DATABASE_URL", _testDatabaseURL)
 
 	api, err := LoadAPI()
 	if err != nil {
-		t.Fatalf("LoadAPI() error = %v, want api to start with only DATABASE_URL", err)
+		t.Fatalf("LoadAPI() error = %v, want only DATABASE_URL to be required", err)
 	}
 	worker, err := LoadWorker()
 	if err != nil {
-		t.Fatalf("LoadWorker() error = %v, want worker to start with only DATABASE_URL", err)
+		t.Fatalf("LoadWorker() error = %v, want only DATABASE_URL to be required", err)
 	}
 
 	if api.Common.Environment != EnvironmentDevelopment || api.Common.LogLevel != zerolog.InfoLevel {
 		t.Errorf("common defaults = %#v, want development/info", api.Common)
 	}
-	if api.Database.ConnectTimeout != 15*time.Second || api.Database.MigrateTimeout != 3*time.Minute {
-		t.Errorf("database timeouts = %s/%s, want 15s/3m", api.Database.ConnectTimeout, api.Database.MigrateTimeout)
+	if db := api.Database; db.ConnectTimeout != 15*time.Second || db.MigrateTimeout != 3*time.Minute {
+		t.Errorf("database timeouts = %s/%s, want 15s/3m", db.ConnectTimeout, db.MigrateTimeout)
 	}
-	if api.Lifecycle.ShutdownTimeout != 10*time.Second || worker.Lifecycle.ShutdownTimeout != 10*time.Second {
-		t.Errorf("shutdown timeouts = %s/%s, want 10s", api.Lifecycle.ShutdownTimeout, worker.Lifecycle.ShutdownTimeout)
+	if api.Lifecycle.ShutdownTimeout != 10*time.Second {
+		t.Errorf("api ShutdownTimeout = %s, want 10s", api.Lifecycle.ShutdownTimeout)
+	}
+	if worker.Lifecycle.ShutdownTimeout != 10*time.Second {
+		t.Errorf("worker ShutdownTimeout = %s, want 10s", worker.Lifecycle.ShutdownTimeout)
 	}
 }
 
 func TestLoadNormalizesCommonConfig(t *testing.T) {
 	cleanEnvironment(t)
-	t.Setenv("DATABASE_URL", testDatabaseURL)
+	t.Setenv("DATABASE_URL", _testDatabaseURL)
 	t.Setenv("APP_ENV", " TEST ")
 	t.Setenv("LOG_LEVEL", "DEBUG")
 
@@ -73,24 +76,84 @@ func TestLoadDurations(t *testing.T) {
 		wantDuration time.Duration
 		wantErr      bool
 	}{
-		{name: "SHUTDOWN_TIMEOUT=25s -> 25s", giveVariable: "SHUTDOWN_TIMEOUT", giveValue: "25s", wantDuration: 25 * time.Second},
-		{name: "SHUTDOWN_TIMEOUT=0s -> error", giveVariable: "SHUTDOWN_TIMEOUT", giveValue: "0s", wantErr: true},
-		{name: "SHUTDOWN_TIMEOUT negative -> error", giveVariable: "SHUTDOWN_TIMEOUT", giveValue: "-1s", wantErr: true},
-		{name: "SHUTDOWN_TIMEOUT unparsable -> error without the value", giveVariable: "SHUTDOWN_TIMEOUT", giveValue: "secret-invalid-duration", wantErr: true},
-		{name: "DATABASE_CONNECT_TIMEOUT=5s -> 5s", giveVariable: "DATABASE_CONNECT_TIMEOUT", giveValue: "5s", wantDuration: 5 * time.Second},
-		{name: "DATABASE_CONNECT_TIMEOUT=0s -> error", giveVariable: "DATABASE_CONNECT_TIMEOUT", giveValue: "0s", wantErr: true},
-		{name: "DATABASE_CONNECT_TIMEOUT negative -> error", giveVariable: "DATABASE_CONNECT_TIMEOUT", giveValue: "-1s", wantErr: true},
-		{name: "DATABASE_CONNECT_TIMEOUT unparsable -> error without the value", giveVariable: "DATABASE_CONNECT_TIMEOUT", giveValue: "secret-invalid-duration", wantErr: true},
-		{name: "DATABASE_MIGRATE_TIMEOUT=30s -> 30s", giveVariable: "DATABASE_MIGRATE_TIMEOUT", giveValue: "30s", wantDuration: 30 * time.Second},
-		{name: "DATABASE_MIGRATE_TIMEOUT=0s -> error", giveVariable: "DATABASE_MIGRATE_TIMEOUT", giveValue: "0s", wantErr: true},
-		{name: "DATABASE_MIGRATE_TIMEOUT negative -> error", giveVariable: "DATABASE_MIGRATE_TIMEOUT", giveValue: "-1s", wantErr: true},
-		{name: "DATABASE_MIGRATE_TIMEOUT unparsable -> error without the value", giveVariable: "DATABASE_MIGRATE_TIMEOUT", giveValue: "secret-invalid-duration", wantErr: true},
+		{
+			name:         "SHUTDOWN_TIMEOUT=25s -> 25s",
+			giveVariable: "SHUTDOWN_TIMEOUT",
+			giveValue:    "25s",
+			wantDuration: 25 * time.Second,
+		},
+		{
+			name:         "SHUTDOWN_TIMEOUT=0s -> error",
+			giveVariable: "SHUTDOWN_TIMEOUT",
+			giveValue:    "0s",
+			wantErr:      true,
+		},
+		{
+			name:         "SHUTDOWN_TIMEOUT negative -> error",
+			giveVariable: "SHUTDOWN_TIMEOUT",
+			giveValue:    "-1s",
+			wantErr:      true,
+		},
+		{
+			name:         "SHUTDOWN_TIMEOUT unparsable -> error without the value",
+			giveVariable: "SHUTDOWN_TIMEOUT",
+			giveValue:    "secret-invalid-duration",
+			wantErr:      true,
+		},
+		{
+			name:         "DATABASE_CONNECT_TIMEOUT=5s -> 5s",
+			giveVariable: "DATABASE_CONNECT_TIMEOUT",
+			giveValue:    "5s",
+			wantDuration: 5 * time.Second,
+		},
+		{
+			name:         "DATABASE_CONNECT_TIMEOUT=0s -> error",
+			giveVariable: "DATABASE_CONNECT_TIMEOUT",
+			giveValue:    "0s",
+			wantErr:      true,
+		},
+		{
+			name:         "DATABASE_CONNECT_TIMEOUT negative -> error",
+			giveVariable: "DATABASE_CONNECT_TIMEOUT",
+			giveValue:    "-1s",
+			wantErr:      true,
+		},
+		{
+			name:         "DATABASE_CONNECT_TIMEOUT unparsable -> error without the value",
+			giveVariable: "DATABASE_CONNECT_TIMEOUT",
+			giveValue:    "secret-invalid-duration",
+			wantErr:      true,
+		},
+		{
+			name:         "DATABASE_MIGRATE_TIMEOUT=30s -> 30s",
+			giveVariable: "DATABASE_MIGRATE_TIMEOUT",
+			giveValue:    "30s",
+			wantDuration: 30 * time.Second,
+		},
+		{
+			name:         "DATABASE_MIGRATE_TIMEOUT=0s -> error",
+			giveVariable: "DATABASE_MIGRATE_TIMEOUT",
+			giveValue:    "0s",
+			wantErr:      true,
+		},
+		{
+			name:         "DATABASE_MIGRATE_TIMEOUT negative -> error",
+			giveVariable: "DATABASE_MIGRATE_TIMEOUT",
+			giveValue:    "-1s",
+			wantErr:      true,
+		},
+		{
+			name:         "DATABASE_MIGRATE_TIMEOUT unparsable -> error without the value",
+			giveVariable: "DATABASE_MIGRATE_TIMEOUT",
+			giveValue:    "secret-invalid-duration",
+			wantErr:      true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cleanEnvironment(t)
-			t.Setenv("DATABASE_URL", testDatabaseURL)
+			t.Setenv("DATABASE_URL", _testDatabaseURL)
 			t.Setenv(tt.giveVariable, tt.giveValue)
 
 			// The api is the only process that reads all three durations.
@@ -125,7 +188,7 @@ func TestLoadDurations(t *testing.T) {
 func TestLoadReadsOnlyVariablesOfItsProcess(t *testing.T) {
 	t.Run("worker never migrates -> broken DATABASE_MIGRATE_TIMEOUT is ignored", func(t *testing.T) {
 		cleanEnvironment(t)
-		t.Setenv("DATABASE_URL", testDatabaseURL)
+		t.Setenv("DATABASE_URL", _testDatabaseURL)
 		t.Setenv("DATABASE_MIGRATE_TIMEOUT", "invalid-for-worker")
 
 		if _, err := LoadWorker(); err != nil {
@@ -135,7 +198,7 @@ func TestLoadReadsOnlyVariablesOfItsProcess(t *testing.T) {
 
 	t.Run("migrate is one-shot -> broken SHUTDOWN_TIMEOUT is ignored", func(t *testing.T) {
 		cleanEnvironment(t)
-		t.Setenv("DATABASE_URL", testDatabaseURL)
+		t.Setenv("DATABASE_URL", _testDatabaseURL)
 		t.Setenv("SHUTDOWN_TIMEOUT", "invalid-for-migrate")
 
 		if _, err := LoadMigrate(); err != nil {
@@ -153,17 +216,42 @@ func TestLoadValidation(t *testing.T) {
 
 		wantErrContains string
 	}{
-		{name: "unknown APP_ENV -> APP_ENV error", giveVariable: "APP_ENV", giveValue: "staging", wantErrContains: "APP_ENV"},
-		{name: "LOG_LEVEL=fatal would hide errors -> LOG_LEVEL error", giveVariable: "LOG_LEVEL", giveValue: "fatal", wantErrContains: "LOG_LEVEL"},
-		{name: "empty LOG_LEVEL -> LOG_LEVEL error", giveVariable: "LOG_LEVEL", giveValue: "", wantErrContains: "LOG_LEVEL"},
-		{name: "mysql DATABASE_URL -> DATABASE_URL error", giveVariable: "DATABASE_URL", giveValue: "mysql://localhost/db", wantErrContains: "DATABASE_URL"},
-		{name: "DATABASE_URL without database name -> DATABASE_URL error", giveVariable: "DATABASE_URL", giveValue: "postgres://localhost", wantErrContains: "DATABASE_URL"},
+		{
+			name:            "unknown APP_ENV -> APP_ENV error",
+			giveVariable:    "APP_ENV",
+			giveValue:       "staging",
+			wantErrContains: "APP_ENV",
+		},
+		{
+			name:            "LOG_LEVEL=fatal would hide errors -> LOG_LEVEL error",
+			giveVariable:    "LOG_LEVEL",
+			giveValue:       "fatal",
+			wantErrContains: "LOG_LEVEL",
+		},
+		{
+			name:            "empty LOG_LEVEL -> LOG_LEVEL error",
+			giveVariable:    "LOG_LEVEL",
+			giveValue:       "",
+			wantErrContains: "LOG_LEVEL",
+		},
+		{
+			name:            "mysql DATABASE_URL -> DATABASE_URL error",
+			giveVariable:    "DATABASE_URL",
+			giveValue:       "mysql://localhost/db",
+			wantErrContains: "DATABASE_URL",
+		},
+		{
+			name:            "DATABASE_URL without database name -> DATABASE_URL error",
+			giveVariable:    "DATABASE_URL",
+			giveValue:       "postgres://localhost",
+			wantErrContains: "DATABASE_URL",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cleanEnvironment(t)
-			t.Setenv("DATABASE_URL", testDatabaseURL)
+			t.Setenv("DATABASE_URL", _testDatabaseURL)
 			t.Setenv(tt.giveVariable, tt.giveValue)
 
 			_, err := LoadMigrate()
@@ -182,16 +270,28 @@ func TestLoadSanitizesCleanenvErrors(t *testing.T) {
 		giveVariable string
 		giveValue    string
 	}{
-		{name: "missing DATABASE_URL -> ErrInvalidConfig", giveVariable: "DATABASE_URL", giveValue: ""},
-		{name: "unparsable LOG_LEVEL -> ErrInvalidConfig", giveVariable: "LOG_LEVEL", giveValue: "verbose-secret"},
-		{name: "unparsable duration -> ErrInvalidConfig", giveVariable: "DATABASE_CONNECT_TIMEOUT", giveValue: "not-a-duration-secret"},
+		{
+			name:         "missing DATABASE_URL -> ErrInvalidConfig",
+			giveVariable: "DATABASE_URL",
+			giveValue:    "",
+		},
+		{
+			name:         "unparsable LOG_LEVEL -> ErrInvalidConfig",
+			giveVariable: "LOG_LEVEL",
+			giveValue:    "verbose-secret",
+		},
+		{
+			name:         "unparsable duration -> ErrInvalidConfig",
+			giveVariable: "DATABASE_CONNECT_TIMEOUT",
+			giveValue:    "not-a-duration-secret",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cleanEnvironment(t)
 			if tt.giveVariable != "DATABASE_URL" {
-				t.Setenv("DATABASE_URL", testDatabaseURL)
+				t.Setenv("DATABASE_URL", _testDatabaseURL)
 				t.Setenv(tt.giveVariable, tt.giveValue)
 			}
 
@@ -254,7 +354,7 @@ func TestConfigFileOverridesProcessEnvironment(t *testing.T) {
 	t.Setenv("CONFIG_FILE", writeConfigFile(t, strings.Join([]string{
 		"APP_ENV=test",
 		"LOG_LEVEL=error",
-		"DATABASE_URL=" + testDatabaseURL,
+		"DATABASE_URL=" + _testDatabaseURL,
 	}, "\n")))
 
 	cfg, err := LoadMigrate()
@@ -265,13 +365,13 @@ func TestConfigFileOverridesProcessEnvironment(t *testing.T) {
 	if cfg.Common.Environment != EnvironmentTest || cfg.Common.LogLevel != zerolog.ErrorLevel {
 		t.Errorf("file common config = %#v, want test/error", cfg.Common)
 	}
-	if cfg.Database.URL != testDatabaseURL {
+	if cfg.Database.URL != _testDatabaseURL {
 		t.Errorf("Database URL did not come from config file")
 	}
 }
 
 func TestConfigFileIsForbiddenInProduction(t *testing.T) {
-	t.Run("APP_ENV=production in process environment -> CONFIG_FILE error before reading the file", func(t *testing.T) {
+	t.Run("production process environment -> CONFIG_FILE error before reading", func(t *testing.T) {
 		cleanEnvironment(t)
 		t.Setenv("APP_ENV", EnvironmentProduction)
 		t.Setenv("CONFIG_FILE", writeConfigFile(t, "APP_ENV=development\n"))
@@ -284,7 +384,7 @@ func TestConfigFileIsForbiddenInProduction(t *testing.T) {
 		cleanEnvironment(t)
 		t.Setenv("CONFIG_FILE", writeConfigFile(t, strings.Join([]string{
 			"APP_ENV=production",
-			"DATABASE_URL=" + testDatabaseURL,
+			"DATABASE_URL=" + _testDatabaseURL,
 		}, "\n")))
 
 		_, err := LoadMigrate()
@@ -308,7 +408,7 @@ func writeConfigFile(t *testing.T, contents string) string {
 func cleanEnvironment(t *testing.T) {
 	t.Helper()
 
-	for _, name := range configEnvironmentNames {
+	for _, name := range _configEnvironmentNames {
 		t.Setenv(name, "")
 		if err := os.Unsetenv(name); err != nil {
 			t.Fatalf("unset %s: %v", name, err)

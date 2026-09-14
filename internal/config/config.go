@@ -16,8 +16,8 @@ const (
 )
 
 const (
-	configFileField = "CONFIG_FILE"
-	envField        = "APP_ENV"
+	_configFileField = "CONFIG_FILE"
+	_envField        = "APP_ENV"
 )
 
 type CommonConfig struct {
@@ -35,6 +35,7 @@ type DatabaseConfig struct {
 // timeout cannot stop a process that never migrates.
 type DatabaseMigrationConfig struct {
 	DatabaseConfig
+
 	MigrateTimeout time.Duration `env:"DATABASE_MIGRATE_TIMEOUT" env-default:"3m" env-description:"Maximum duration of a migration run, including the lock wait"`
 }
 

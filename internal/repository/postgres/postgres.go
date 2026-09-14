@@ -20,9 +20,9 @@ const (
 	CommandUp     = "up"
 	CommandDown   = "down"
 	CommandStatus = "status"
-
-	lockRetryPeriodSeconds = 1
 )
+
+const _lockRetryPeriodSeconds = 1
 
 var (
 	ErrConnect = errors.New("postgres connection failed")
@@ -97,18 +97,23 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, cfg config.DatabaseMigrati
 	}
 
 	logger.Info().Str("command", command).Msg("migration_completed")
+
 	return nil
 }
 
 func newProvider(db *sql.DB, cfg config.DatabaseMigrationConfig) (*goose.Provider, error) {
 	retries := max(cfg.MigrateTimeout/time.Second, 1)
 
-	locker, err := lock.NewPostgresSessionLocker(lock.WithLockTimeout(lockRetryPeriodSeconds, uint64(retries)))
+	locker, err := lock.NewPostgresSessionLocker(
+		lock.WithLockTimeout(_lockRetryPeriodSeconds, uint64(retries)),
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	return goose.NewProvider(goose.DialectPostgres, db, migrations.FS, goose.WithSessionLocker(locker))
+	return goose.NewProvider(
+		goose.DialectPostgres, db, migrations.FS, goose.WithSessionLocker(locker),
+	)
 }
 
 func runCommand(ctx context.Context, logger *zerolog.Logger, provider *goose.Provider, command string) error {
@@ -118,9 +123,11 @@ func runCommand(ctx context.Context, logger *zerolog.Logger, provider *goose.Pro
 		if err != nil {
 			return err
 		}
+
 		for _, result := range results {
 			logResult(logger, result)
 		}
+
 		return nil
 
 	case CommandDown:
@@ -128,7 +135,9 @@ func runCommand(ctx context.Context, logger *zerolog.Logger, provider *goose.Pro
 		if err != nil {
 			return err
 		}
+
 		logResult(logger, result)
+
 		return nil
 
 	case CommandStatus:
@@ -136,6 +145,7 @@ func runCommand(ctx context.Context, logger *zerolog.Logger, provider *goose.Pro
 		if err != nil {
 			return err
 		}
+
 		for _, item := range items {
 			event := logger.Info().
 				Int64("version", item.Source.Version).
@@ -144,8 +154,10 @@ func runCommand(ctx context.Context, logger *zerolog.Logger, provider *goose.Pro
 			if !item.AppliedAt.IsZero() {
 				event = event.Time("applied_at", item.AppliedAt)
 			}
+
 			event.Msg("migration_status")
 		}
+
 		return nil
 
 	default:

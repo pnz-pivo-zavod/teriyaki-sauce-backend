@@ -47,10 +47,11 @@ func LoadMigrate() (MigrateConfig, error) {
 }
 
 func load(cfg any, common *CommonConfig) error {
-	configFile := strings.TrimSpace(os.Getenv(configFileField))
-	processEnvironment := strings.ToLower(strings.TrimSpace(os.Getenv(envField)))
+	configFile := strings.TrimSpace(os.Getenv(_configFileField))
+	processEnvironment := strings.ToLower(strings.TrimSpace(os.Getenv(_envField)))
+
 	if configFile != "" && processEnvironment == EnvironmentProduction {
-		return invalid(configFileField, "is not allowed in production")
+		return invalid(_configFileField, "is not allowed in production")
 	}
 
 	var err error
@@ -63,8 +64,9 @@ func load(cfg any, common *CommonConfig) error {
 		return ErrInvalidConfig
 	}
 
-	if configFile != "" && strings.EqualFold(strings.TrimSpace(common.Environment), EnvironmentProduction) {
-		return invalid(configFileField, "is not allowed in production")
+	fileEnvironment := strings.TrimSpace(common.Environment)
+	if configFile != "" && strings.EqualFold(fileEnvironment, EnvironmentProduction) {
+		return invalid(_configFileField, "is not allowed in production")
 	}
 
 	return nil

@@ -33,7 +33,8 @@ func TestConfigure(t *testing.T) {
 
 			if !tt.wantJSON {
 				line := output.String()
-				if !strings.Contains(line, "INF") || !strings.Contains(line, "started") || strings.Contains(line, "\x1b[") {
+				hasColors := strings.Contains(line, "\x1b[")
+				if hasColors || !strings.Contains(line, "INF") || !strings.Contains(line, "started") {
 					t.Errorf("console output = %q", line)
 				}
 
@@ -44,7 +45,8 @@ func TestConfigure(t *testing.T) {
 			if err := json.Unmarshal(output.Bytes(), &event); err != nil {
 				t.Fatalf("log is not JSON: %v", err)
 			}
-			if event["service"] != "api" || event["environment"] != tt.giveEnvironment || event["message"] != "started" {
+			if event["service"] != "api" || event["environment"] != tt.giveEnvironment ||
+				event["message"] != "started" {
 				t.Errorf("event = %#v, want structured fields", event)
 			}
 		})
@@ -59,7 +61,8 @@ func TestConfigureLevel(t *testing.T) {
 	logger.Info().Msg("filtered")
 	logger.Warn().Msg("visible")
 
-	if strings.Contains(output.String(), "filtered") || !strings.Contains(output.String(), "visible") {
+	got := output.String()
+	if strings.Contains(got, "filtered") || !strings.Contains(got, "visible") {
 		t.Errorf("level-filtered output = %q", output.String())
 	}
 }
